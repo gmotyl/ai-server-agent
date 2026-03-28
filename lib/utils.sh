@@ -3,6 +3,7 @@
 
 # Resolve AGENT_HOME to repo root (parent of lib/)
 AGENT_HOME="${AGENT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+export AGENT_HOME
 
 # Load config
 load_config() {
@@ -31,10 +32,18 @@ read_state() {
   jq -r "$key" "${AGENT_HOME}/data/state.json" 2>/dev/null || echo ""
 }
 
-# Write JSON field to state.json
+# Write JSON field to state.json (string value)
 write_state() {
   local key="$1"
   local value="$2"
   local tmp="${AGENT_HOME}/data/state.json.tmp"
-  jq "$key = $value" "${AGENT_HOME}/data/state.json" > "$tmp" && mv "$tmp" "${AGENT_HOME}/data/state.json"
+  jq --arg v "$value" "$key = \$v" "${AGENT_HOME}/data/state.json" > "$tmp" && mv "$tmp" "${AGENT_HOME}/data/state.json"
+}
+
+# Write JSON field to state.json (raw/numeric value)
+write_state_raw() {
+  local key="$1"
+  local value="$2"
+  local tmp="${AGENT_HOME}/data/state.json.tmp"
+  jq --argjson v "$value" "$key = \$v" "${AGENT_HOME}/data/state.json" > "$tmp" && mv "$tmp" "${AGENT_HOME}/data/state.json"
 }

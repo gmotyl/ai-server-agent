@@ -24,21 +24,17 @@ run_provider() {
     return 1
   fi
 
-  # Replace placeholders
-  local cmd="${cmd_template}"
-  cmd="${cmd//\{workdir\}/${workdir}}"
-
-  # Write prompt to temp file to avoid shell escaping issues
+  # Write prompt to temp file — prompt content NEVER enters command string
   local prompt_file
   prompt_file=$(mktemp)
   echo "$prompt" > "$prompt_file"
 
-  # Replace {prompt} with file-based input
-  # Provider commands use "{prompt}" — replace with contents via cat
-  cmd="${cmd//\{prompt\}/$(cat "$prompt_file")}"
+  # Replace placeholders with safe values (paths only, no user content)
+  local cmd="${cmd_template}"
+  cmd="${cmd//\{workdir\}/${workdir}}"
+  cmd="${cmd//\{prompt_file\}/${prompt_file}}"
 
   log "INFO" "Running provider '${provider}' in ${workdir}"
-  log "INFO" "Command: ${cmd}"
 
   local output
   local exit_code

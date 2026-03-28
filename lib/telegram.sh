@@ -27,7 +27,7 @@ telegram_send() {
     telegram_api "sendMessage" \
       -d "chat_id=${TELEGRAM_GROUP_ID}" \
       -d "message_thread_id=${topic_id}" \
-      -d "text=${text}" \
+      --data-urlencode "text=${text}" \
       -d "parse_mode=Markdown"
   else
     # Split into chunks
@@ -36,7 +36,8 @@ telegram_send() {
       telegram_api "sendMessage" \
         -d "chat_id=${TELEGRAM_GROUP_ID}" \
         -d "message_thread_id=${topic_id}" \
-        -d "text=${chunk}"
+        --data-urlencode "text=${chunk}" \
+        -d "parse_mode=Markdown"
       text="${text:$MAX_MESSAGE_LENGTH}"
     done
   fi
@@ -48,7 +49,7 @@ telegram_create_topic() {
   local result
   result=$(telegram_api "createForumTopic" \
     -d "chat_id=${TELEGRAM_GROUP_ID}" \
-    -d "name=${name}")
+    --data-urlencode "name=${name}")
   echo "$result" | jq -r '.result.message_thread_id'
 }
 

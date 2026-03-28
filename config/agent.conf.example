@@ -13,10 +13,11 @@ HEARTBEAT_TIMEOUT_SEC=3600
 DEFAULT_PROVIDER="claude"
 
 # --- Provider Commands ---
-# {prompt} and {workdir} are replaced at runtime
-PROVIDER_CMD_claude='docker compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -w {workdir} claude claude --dangerously-skip-permissions -p "{prompt}"'
-PROVIDER_CMD_gemini='docker compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -w {workdir} gemini gemini -p "{prompt}"'
-PROVIDER_CMD_codex='docker compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -w {workdir} codex codex --auto-approve -p "{prompt}"'
+# {prompt_file} = path to temp file containing the prompt (safe, no injection)
+# {workdir} = working directory inside the container
+PROVIDER_CMD_claude='docker compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -v {prompt_file}:/tmp/prompt:ro -w {workdir} claude claude --dangerously-skip-permissions -p "$(cat /tmp/prompt)"'
+PROVIDER_CMD_gemini='docker compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -v {prompt_file}:/tmp/prompt:ro -w {workdir} gemini gemini -p "$(cat /tmp/prompt)"'
+PROVIDER_CMD_codex='docker compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -v {prompt_file}:/tmp/prompt:ro -w {workdir} codex codex --auto-approve -p "$(cat /tmp/prompt)"'
 
 # --- Paths ---
 # AGENT_HOME is auto-detected from install location, override if needed

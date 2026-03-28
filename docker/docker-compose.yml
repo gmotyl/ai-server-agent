@@ -5,7 +5,7 @@ services:
       - ${GIT_DIR:-../git}:/git
       - claude-home:/home/agent
       - ${HOME}/.ssh:/home/agent/.ssh:ro
-      - ../memory:/memory
+      - ${AGENT_HOME:-.}/memory:/memory
     working_dir: /git
 
   # Add more providers here:
@@ -15,7 +15,7 @@ services:
   #     - ${GIT_DIR:-../git}:/git
   #     - gemini-home:/home/agent
   #     - ${HOME}/.ssh:/home/agent/.ssh:ro
-  #     - ../memory:/memory
+  #     - ${AGENT_HOME:-.}/memory:/memory
   #   working_dir: /git
 
 volumes:

@@ -29,7 +29,7 @@ for ((i=0; i<due_count; i++)); do
   topic_id=$(read_state ".schedule_topics.\"${name}\"")
   if [[ -z "$topic_id" || "$topic_id" == "null" ]]; then
     topic_id=$(telegram_create_topic "$topic_name")
-    write_state ".schedule_topics.\"${name}\"" "$topic_id"
+    write_state_raw ".schedule_topics.\"${name}\"" "$topic_id"
     log "INFO" "Created topic ${topic_id} for schedule '${name}'"
   fi
 
@@ -50,7 +50,7 @@ for ((i=0; i<due_count; i++)); do
 
   # Mark as run
   current_window=$(date '+%Y-%m-%d-%H-%M')
-  write_state ".schedules_last_run.\"${name}\"" "\"${current_window}\""
+  write_state ".schedules_last_run.\"${name}\"" "${current_window}"
 done
 
 # --- 2. Poll Telegram ---
@@ -68,7 +68,7 @@ fi
 
 # Update offset to highest update_id + 1
 new_offset=$(echo "$updates" | jq '[.result[].update_id] | max + 1')
-write_state '.last_update_id' "$new_offset"
+write_state_raw '.last_update_id' "$new_offset"
 
 # --- 3. Process messages ---
 for ((i=0; i<update_count; i++)); do
@@ -93,12 +93,12 @@ for ((i=0; i<update_count; i++)); do
       ;;
     /provider\ *)
       new_provider="${msg_text#/provider }"
-      write_state ".topic_providers.\"${topic_id}\"" "\"${new_provider}\""
+      write_state ".topic_providers.\"${topic_id}\"" "${new_provider}"
       telegram_send "$topic_id" "Provider set to: ${new_provider}"
       continue
       ;;
     /close)
-      write_state ".topics.\"${topic_id}\".active" "false"
+      write_state_raw ".topics.\"${topic_id}\".active" "false"
       telegram_send "$topic_id" "Topic closed. Send a new message to reopen."
       continue
       ;;
