@@ -1,0 +1,28 @@
+# config/agent.conf.example
+# Copy to agent.conf and fill in your values
+
+# --- Telegram ---
+TELEGRAM_BOT_TOKEN=""
+TELEGRAM_GROUP_ID=""
+
+# --- Heartbeat ---
+HEARTBEAT_INTERVAL_MIN=30
+HEARTBEAT_TIMEOUT_SEC=3600
+
+# --- Default AI Provider ---
+DEFAULT_PROVIDER="claude"
+
+# --- Provider Commands ---
+# {prompt} and {workdir} are replaced at runtime
+PROVIDER_CMD_claude='docker compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -w {workdir} claude claude --dangerously-skip-permissions -p "{prompt}"'
+PROVIDER_CMD_gemini='docker compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -w {workdir} gemini gemini -p "{prompt}"'
+PROVIDER_CMD_codex='docker compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -w {workdir} codex codex --auto-approve -p "{prompt}"'
+
+# --- Paths ---
+# AGENT_HOME is auto-detected from install location, override if needed
+# AGENT_HOME="/share/CACHEDEV1_DATA/ai-server-agent"
+# GIT_DIR defaults to ${AGENT_HOME}/git
+# GIT_DIR="/share/CACHEDEV1_DATA/ai-server-agent/git"
+
+# --- Telegram Message Limits ---
+MAX_MESSAGE_LENGTH=4096
