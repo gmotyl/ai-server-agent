@@ -15,6 +15,7 @@ load_config() {
   source "$config_file"
   # Defaults
   GIT_DIR="${GIT_DIR:-${AGENT_HOME}/git}"
+  export GIT_DIR
   MAX_MESSAGE_LENGTH="${MAX_MESSAGE_LENGTH:-4096}"
   HEARTBEAT_TIMEOUT_SEC="${HEARTBEAT_TIMEOUT_SEC:-3600}"
 }
