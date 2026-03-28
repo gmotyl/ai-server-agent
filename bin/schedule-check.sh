@@ -8,7 +8,7 @@ load_config
 
 SCHEDULES_FILE="${AGENT_HOME}/data/schedules.json"
 
-if [[ ! -f "$SCHEDULES_FILE" ]] || [[ "$(cat "$SCHEDULES_FILE")" == "[]" ]]; then
+if [[ ! -f "$SCHEDULES_FILE" ]] || [[ $(jq 'length' "$SCHEDULES_FILE") -eq 0 ]]; then
   echo "[]"
   exit 0
 fi
@@ -31,7 +31,7 @@ cron_field_matches() {
   # Handle */step
   if [[ "$field" == *"/"* ]]; then
     local step="${field#*/}"
-    (( current % step == 0 )) && return 0
+    (( step != 0 && current % step == 0 )) && return 0
     return 1
   fi
 
@@ -56,25 +56,28 @@ cron_matches_now() {
   return 0
 }
 
-# Check each schedule, output due ones
-due_tasks="[]"
-count=$(jq 'length' "$SCHEDULES_FILE")
-for ((i=0; i<count; i++)); do
-  cron_expr=$(jq -r ".[$i].cron" "$SCHEDULES_FILE")
-  name=$(jq -r ".[$i].name" "$SCHEDULES_FILE")
+# Check each schedule, collect due ones
+due_tasks_parts=()
+current_window=$(date '+%Y-%m-%d-%H-%M')
+
+while IFS= read -r task_json; do
+  cron_expr=$(echo "$task_json" | jq -r '.cron')
+  name=$(echo "$task_json" | jq -r '.name')
 
   if cron_matches_now "$cron_expr"; then
-    # Check if already run in this time window
     last_run=$(read_state ".schedules_last_run.\"${name}\"")
-    current_window=$(date '+%Y-%m-%d-%H-%M')
 
     if [[ "$last_run" != "$current_window" ]]; then
-      due_tasks=$(echo "$due_tasks" | jq ". + [$(jq ".[$i]" "$SCHEDULES_FILE")]")
+      due_tasks_parts+=("$task_json")
       log "INFO" "Schedule '${name}' is due"
     else
       log "INFO" "Schedule '${name}' already ran this window, skipping"
     fi
   fi
-done
+done < <(jq -c '.[]' "$SCHEDULES_FILE")
 
-echo "$due_tasks"
+if (( ${#due_tasks_parts[@]} > 0 )); then
+  printf '%s\n' "${due_tasks_parts[@]}" | jq -s '.'
+else
+  echo "[]"
+fi

@@ -2,7 +2,7 @@
 # install.sh — one-command setup for ai-server-agent
 set -euo pipefail
 
-AGENT_HOME="$(cd "$(dirname "$0")" && pwd)"
+AGENT_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "=== ai-server-agent installer ==="
 echo "Location: ${AGENT_HOME}"
 

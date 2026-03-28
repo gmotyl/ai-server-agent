@@ -22,8 +22,9 @@ telegram_send() {
   local topic_id="$1"
   local text="$2"
   local length=${#text}
+  local max_len=${MAX_MESSAGE_LENGTH:-4096}
 
-  if [[ $length -le $MAX_MESSAGE_LENGTH ]]; then
+  if [[ $length -le $max_len ]]; then
     telegram_api "sendMessage" \
       -d "chat_id=${TELEGRAM_GROUP_ID}" \
       -d "message_thread_id=${topic_id}" \
@@ -32,13 +33,13 @@ telegram_send() {
   else
     # Split into chunks
     while [[ -n "$text" ]]; do
-      local chunk="${text:0:$MAX_MESSAGE_LENGTH}"
+      local chunk="${text:0:$max_len}"
       telegram_api "sendMessage" \
         -d "chat_id=${TELEGRAM_GROUP_ID}" \
         -d "message_thread_id=${topic_id}" \
         --data-urlencode "text=${chunk}" \
         -d "parse_mode=Markdown"
-      text="${text:$MAX_MESSAGE_LENGTH}"
+      text="${text:$max_len}"
     done
   fi
 }

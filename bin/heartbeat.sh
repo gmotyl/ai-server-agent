@@ -17,11 +17,13 @@ due_count=$(echo "$due_tasks" | jq 'length')
 
 for ((i=0; i<due_count; i++)); do
   task=$(echo "$due_tasks" | jq -c ".[$i]")
-  name=$(echo "$task" | jq -r '.name')
-  provider=$(echo "$task" | jq -r '.provider // env.DEFAULT_PROVIDER')
-  workdir=$(echo "$task" | jq -r '.workdir // "/git"')
-  prompt=$(echo "$task" | jq -r '.prompt')
-  topic_name=$(echo "$task" | jq -r '.topic_name // ("Scheduled: " + .name)')
+  eval "$(echo "$task" | jq -r --arg dp "$DEFAULT_PROVIDER" '@sh "
+    name=\(.name)
+    provider=\(.provider // $dp)
+    workdir=\(.workdir // "/git")
+    prompt=\(.prompt)
+    topic_name=\(.topic_name // ("Scheduled: " + .name))
+  "')"
 
   log "INFO" "Running scheduled task: ${name}"
 
@@ -73,9 +75,11 @@ write_state_raw '.last_update_id' "$new_offset"
 # --- 3. Process messages ---
 for ((i=0; i<update_count; i++)); do
   update=$(echo "$updates" | jq -c ".result[$i]")
-  msg_text=$(echo "$update" | jq -r '.message.text // empty')
-  topic_id=$(echo "$update" | jq -r '.message.message_thread_id // empty')
-  from_user=$(echo "$update" | jq -r '.message.from.first_name // "unknown"')
+  eval "$(echo "$update" | jq -r '@sh "
+    msg_text=\(.message.text // empty)
+    topic_id=\(.message.message_thread_id // empty)
+    from_user=\(.message.from.first_name // "unknown")
+  "')"
 
   # Skip if no text or no topic
   [[ -z "$msg_text" || -z "$topic_id" ]] && continue
@@ -87,7 +91,7 @@ for ((i=0; i<update_count; i++)); do
     /clone\ *)
       repo_url="${msg_text#/clone }"
       log "INFO" "Cloning: ${repo_url}"
-      clone_output=$(git -C "${GIT_DIR}" clone "$repo_url" 2>&1) || true
+      clone_output=$(git -C "${GIT_DIR}" clone -- "$repo_url" 2>&1) || true
       telegram_send "$topic_id" "Clone result:\n${clone_output}"
       continue
       ;;
