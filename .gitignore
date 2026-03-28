@@ -1,0 +1,9 @@
+# Runtime state
+config/agent.conf
+data/
+memory/
+logs/
+git/
+
+# OS
+.DS_Store
