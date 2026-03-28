@@ -127,7 +127,7 @@ for ((i=0; i<update_count; i++)); do
 
   # Determine workdir (topic override or default)
   workdir=$(read_state ".topic_workdirs.\"${topic_id}\"")
-  [[ -z "$workdir" || "$workdir" == "null" ]] && workdir="/git"
+  [[ -z "$workdir" || "$workdir" == "null" ]] && workdir="${GIT_DIR}"
 
   # Send typing indicator
   telegram_api "sendChatAction" \

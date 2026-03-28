@@ -13,7 +13,7 @@ get_provider_cmd() {
 run_provider() {
   local provider="$1"
   local prompt="$2"
-  local workdir="${3:-/git}"
+  local workdir="${3:-${GIT_DIR:-/git}}"
 
   local cmd_template
   cmd_template=$(get_provider_cmd "$provider")
@@ -34,7 +34,7 @@ run_provider() {
   cmd="${cmd//\{workdir\}/${workdir}}"
   cmd="${cmd//\{prompt_file\}/${prompt_file}}"
 
-  log "INFO" "Running provider '${provider}' in ${workdir}"
+  log "INFO" "Running provider '${provider}' in ${workdir}" >&2
 
   local output
   local exit_code
@@ -42,7 +42,7 @@ run_provider() {
   local timeout_cmd="timeout"
   command -v timeout &>/dev/null || timeout_cmd="gtimeout"
   if ! command -v "$timeout_cmd" &>/dev/null; then
-    log "WARN" "No timeout/gtimeout found, running without timeout"
+    log "WARN" "No timeout/gtimeout found, running without timeout" >&2
     timeout_cmd=""
   fi
 
@@ -56,7 +56,7 @@ run_provider() {
   rm -f "$prompt_file"
 
   if [[ $exit_code -eq 124 ]]; then
-    log "WARN" "Provider '${provider}' timed out after ${HEARTBEAT_TIMEOUT_SEC}s"
+    log "WARN" "Provider '${provider}' timed out after ${HEARTBEAT_TIMEOUT_SEC}s" >&2
     echo "${output}"$'\n\n'"[TIMEOUT: execution exceeded ${HEARTBEAT_TIMEOUT_SEC}s limit]"
     return 124
   fi
