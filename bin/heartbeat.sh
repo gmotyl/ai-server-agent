@@ -76,8 +76,8 @@ write_state_raw '.last_update_id' "$new_offset"
 for ((i=0; i<update_count; i++)); do
   update=$(echo "$updates" | jq -c ".result[$i]")
   eval "$(echo "$update" | jq -r '@sh "
-    msg_text=\(.message.text // empty)
-    topic_id=\(.message.message_thread_id // empty)
+    msg_text=\(.message.text // "")
+    topic_id=\(.message.message_thread_id // "")
     from_user=\(.message.from.first_name // "unknown")
   "')"
 
