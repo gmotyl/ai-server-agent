@@ -38,7 +38,19 @@ run_provider() {
 
   local output
   local exit_code
-  output=$(timeout "${HEARTBEAT_TIMEOUT_SEC}" bash -c "$cmd" 2>&1)
+  # Use gtimeout on macOS (brew install coreutils), timeout on Linux
+  local timeout_cmd="timeout"
+  command -v timeout &>/dev/null || timeout_cmd="gtimeout"
+  if ! command -v "$timeout_cmd" &>/dev/null; then
+    log "WARN" "No timeout/gtimeout found, running without timeout"
+    timeout_cmd=""
+  fi
+
+  if [[ -n "$timeout_cmd" ]]; then
+    output=$("$timeout_cmd" "${HEARTBEAT_TIMEOUT_SEC}" bash -c "$cmd" 2>&1)
+  else
+    output=$(bash -c "$cmd" 2>&1)
+  fi
   exit_code=$?
 
   rm -f "$prompt_file"

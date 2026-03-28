@@ -13,12 +13,13 @@ if [[ ! -f "$SCHEDULES_FILE" ]] || [[ $(jq 'length' "$SCHEDULES_FILE") -eq 0 ]];
   exit 0
 fi
 
-# Current time components
-NOW_MIN=$(date '+%-M')
-NOW_HOUR=$(date '+%-H')
-NOW_DOM=$(date '+%-d')
-NOW_MON=$(date '+%-m')
-NOW_DOW=$(date '+%-u')  # 1=Mon, 7=Sun
+# Current time components (strip leading zeros for arithmetic — works on both GNU and BSD date)
+NOW_MIN=$((10#$(date '+%M')))
+NOW_HOUR=$((10#$(date '+%H')))
+NOW_DOM=$((10#$(date '+%d')))
+NOW_MON=$((10#$(date '+%m')))
+# Day of week: GNU date %u = 1-7 (Mon-Sun), macOS date %u also works on modern macOS
+NOW_DOW=$(date '+%u')
 
 # Check if a cron field matches current value
 # Supports: *, specific number, comma-separated, */step
