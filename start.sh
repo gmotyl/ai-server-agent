@@ -22,10 +22,17 @@ MIN_POLL=30
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --once) MODE="once"; shift ;;
-    -i)     INTERVAL="$2"; shift 2 ;;
+    -i)     [[ -z "${2:-}" ]] && echo "Error: -i requires an interval in seconds" && exit 1
+            INTERVAL="$2"; shift 2 ;;
     *)      echo "Unknown option: $1"; exit 1 ;;
   esac
 done
+
+# Validate -i value if provided
+if [[ -n "$INTERVAL" ]] && ! [[ "$INTERVAL" =~ ^[0-9]+$ ]]; then
+  echo "Error: interval must be a positive integer (seconds)"
+  exit 1
+fi
 
 # --- Resolve heartbeat interval ---
 # Priority: -i flag > config file > mode default (600s interactive, 1800s cron)

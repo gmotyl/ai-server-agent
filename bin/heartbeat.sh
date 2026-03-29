@@ -158,4 +158,4 @@ for ((i=0; i<update_count; i++)); do
 done
 
 log "INFO" "=== Heartbeat end ==="
-exit 10
+exit "$( [[ "$MESSAGES_PROCESSED" -eq 1 ]] && echo 10 || echo 0 )"

@@ -48,7 +48,7 @@ fi
 touch "${AGENT_HOME}/memory/MEMORY.md"
 
 # 5. Make scripts executable
-chmod +x "${AGENT_HOME}"/bin/*.sh
+chmod +x "${AGENT_HOME}"/bin/*.sh "${AGENT_HOME}/start.sh"
 
 # 6. Print cron instructions
 INTERVAL="${HEARTBEAT_INTERVAL_MIN:-30}"
