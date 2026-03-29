@@ -9,6 +9,8 @@ source "${SCRIPT_DIR}/../lib/memory.sh"
 source "${SCRIPT_DIR}/../lib/provider.sh"
 load_config
 
+MESSAGES_PROCESSED=0
+
 log "INFO" "=== Heartbeat start ==="
 
 # --- 1. Scheduled tasks ---
@@ -49,6 +51,7 @@ for ((i=0; i<due_count; i++)); do
   append_topic_context "$topic_id" "[scheduled] $prompt" "$output" "$provider"
   log_message "$topic_id" "schedule" "$prompt"
   log_message "$topic_id" "$provider" "$output"
+  MESSAGES_PROCESSED=1
 
   # Mark as run
   current_window=$(date '+%Y-%m-%d-%H-%M')
@@ -65,7 +68,7 @@ update_count=$(echo "$updates" | jq '.result | length')
 if [[ "$update_count" -eq 0 ]]; then
   log "INFO" "No new messages"
   log "INFO" "=== Heartbeat end ==="
-  exit 0
+  exit "$( [[ "$MESSAGES_PROCESSED" -eq 1 ]] && echo 10 || echo 0 )"
 fi
 
 # Update offset to highest update_id + 1
@@ -151,6 +154,8 @@ for ((i=0; i<update_count; i++)); do
   log_message "$topic_id" "$provider" "$output"
 
   log "INFO" "Response posted to topic ${topic_id}"
+  MESSAGES_PROCESSED=1
 done
 
 log "INFO" "=== Heartbeat end ==="
+exit 10
