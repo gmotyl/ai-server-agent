@@ -45,7 +45,7 @@ The agent uses **Telegram long polling** for near-instant message delivery:
 - **No fixed interval or polling delay** — Telegram holds the connection open and pushes updates as soon as they arrive
 - **Typing indicator** — while the AI provider is generating a response, Telegram shows "typing..." in the chat (persists for the full duration, not just 5 seconds)
 - **Interactive mode** (`./start.sh`) — loops forever, Ctrl+C to stop
-- **Cron mode** (`./start.sh --once -i 1800`) — listens for 30 minutes, then exits
+- **Cron mode** (`./start.sh --once`) — listens for the configured interval (default 30m), then exits
 
 ## Requirements
 
@@ -63,7 +63,7 @@ Copy `config/agent.conf.example` to `config/agent.conf`:
 | `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather | (required) |
 | `TELEGRAM_GROUP_ID` | Group ID (negative number) | (required) |
 | `DEFAULT_PROVIDER` | AI provider name | `claude` |
-| `HEARTBEAT_INTERVAL_MIN` | Heartbeat interval in minutes | `30` |
+| `HEARTBEAT_INTERVAL_MIN` | Cron mode listen duration (minutes) | `30` |
 | `HEARTBEAT_TIMEOUT_SEC` | Max provider execution time | `3600` |
 | `GIT_DIR` | Working directory for repos | `$AGENT_HOME/git` |
 | `PROVIDER_CMD_<name>` | Command template per provider | — |

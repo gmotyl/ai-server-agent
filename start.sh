@@ -2,9 +2,9 @@
 # start.sh — run the ai-server-agent with long polling
 #
 # Usage:
-#   ./start.sh              # interactive mode, loops forever (default 10m)
-#   ./start.sh --once       # single cycle, then exit (for cron)
-#   ./start.sh -i 300       # custom interval in seconds
+#   ./start.sh              # interactive mode, loops forever
+#   ./start.sh --once       # cron mode: listen for configured interval, then exit
+#   ./start.sh --once -i 900  # cron mode with custom interval (seconds)
 #
 # Long polling:
 #   Uses Telegram's long polling (30s timeout) for near-instant message pickup.
@@ -33,23 +33,22 @@ if [[ -n "$INTERVAL" ]] && ! [[ "$INTERVAL" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-# --- Resolve interval ---
-# Priority: -i flag > config file > mode default (600s interactive, 1800s cron)
-if [[ -z "$INTERVAL" ]]; then
+# -i only applies to --once mode
+if [[ -n "$INTERVAL" && "$MODE" != "once" ]]; then
+  echo "Error: -i is only used with --once (cron mode)"
+  exit 1
+fi
+
+# --- Resolve --once interval ---
+# Priority: -i flag > config file > default 1800s (30m)
+if [[ "$MODE" == "once" && -z "$INTERVAL" ]]; then
   if [[ -f "${AGENT_HOME}/config/agent.conf" ]]; then
     source "${AGENT_HOME}/config/agent.conf"
     if [[ -n "${HEARTBEAT_INTERVAL_MIN:-}" ]]; then
       INTERVAL=$((HEARTBEAT_INTERVAL_MIN * 60))
     fi
   fi
-fi
-
-if [[ -z "$INTERVAL" ]]; then
-  if [[ "$MODE" == "once" ]]; then
-    INTERVAL=1800  # 30m default for cron
-  else
-    INTERVAL=600   # 10m default for interactive
-  fi
+  [[ -z "$INTERVAL" ]] && INTERVAL=1800
 fi
 
 # --- Ensure runtime dirs and state ---
@@ -86,10 +85,13 @@ export POLL_TIMEOUT=30
 # --- Banner ---
 if [[ "$MODE" == "loop" ]]; then
   echo "=== ai-server-agent ==="
-  echo "Location:  ${AGENT_HOME}"
-  echo "Mode:      interactive (Ctrl+C to stop)"
-  echo "Polling:   long poll (${POLL_TIMEOUT}s timeout)"
+  echo "Location: ${AGENT_HOME}"
+  echo "Mode:     interactive (Ctrl+C to stop)"
+  echo "Polling:  long poll (${POLL_TIMEOUT}s timeout)"
   echo ""
+elif [[ "$MODE" == "once" ]]; then
+  echo "=== ai-server-agent (cron) ==="
+  echo "Listening for $((INTERVAL / 60))m (${INTERVAL}s), then exit"
 fi
 
 # --- Main ---
