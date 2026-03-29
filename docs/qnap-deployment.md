@@ -174,6 +174,7 @@ GIT_DIR="/share/homes/your_user/git"
 | `cat: /tmp/prompt: No such file or directory` | `$(cat /tmp/prompt)` expands on the host, not inside Docker | Wrap command with `sh -c '...'` so it runs in the container |
 | `docker compose: unknown command` | QNAP doesn't support `docker compose` (space) | Use `/usr/local/lib/docker/cli-plugins/docker-compose` |
 | `claude: not found` | Claude binary not in container PATH | Ensure the image has claude in PATH, or use `sh -c 'export PATH=...; claude ...'` |
+| `cat: /tmp/prompt: Permission denied` | Host `mktemp` creates files with mode 600; container user (different uid) can't read | Fixed in `lib/provider.sh` — prompt files are created with `chmod 644` |
 | Docker network creation errors | QNAP vswitch conflicts | Add `network_mode: bridge` to docker-compose.yml, or use an existing network |
 
 ### 6. Set permissions and initialize
