@@ -59,8 +59,9 @@ build_prompt() {
   topic_ctx=$(read_topic_context "$topic_id")
 
   cat <<EOF
-You are an AI agent running on a server. You have access to repos in /git.
-Write any persistent learnings to /memory/MEMORY.md.
+You are an AI agent running on a server.
+Your home directory is ${AGENT_HOME}. You have access to repos in ${GIT_DIR}.
+Write any persistent learnings to ${AGENT_HOME}/memory/MEMORY.md.
 
 === PERSISTENT MEMORY ===
 ${global_mem}
