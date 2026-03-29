@@ -2,40 +2,89 @@
 
 A provider-agnostic AI agent that runs on any Docker host (NAS, VPS, etc.), communicates via Telegram, and executes tasks autonomously.
 
-Supports Claude Code, Gemini CLI, Codex, or any CLI tool with a yolo/auto-approve mode.
+Supports Claude Code, Gemini CLI, Codex, or any CLI tool with auto-approve mode.
 
-## Quick Start
+## Quick Start (Local)
+
+1. Clone this repo
+2. Copy `config/agent.conf.example` to `config/agent.conf`
+3. Fill in your Telegram bot token and group ID
+4. Run:
+
+```bash
+./start.sh
+```
+
+The agent connects to your Telegram group and starts listening. Messages are picked up **near-instantly** via Telegram's long polling.
+
+## Server Deployment (Cron)
+
+For a persistent server (NAS, VPS):
 
 1. Clone this repo on your server
-2. Run `./install.sh` — creates config template
-3. Edit `config/agent.conf` with your Telegram bot token and group ID
-4. Run `./install.sh` again — builds Docker image
-5. Add the printed cron line to your crontab
-6. Send a message in your Telegram group — the agent will pick it up on next heartbeat
+2. Edit `config/agent.conf` with your values
+3. Run `./install.sh` — builds Docker image, prints cron line
+4. Add the cron line to your crontab
+
+The cron job runs `./start.sh --once` which listens for the configured interval (default **30 minutes**, set `HEARTBEAT_INTERVAL_MIN` in config), then exits. The next cron invocation picks up where it left off.
+
+## How It Works
+
+The agent uses **Telegram long polling** for near-instant message delivery:
+
+```
+./start.sh
+  └─ heartbeat loop (tight, no sleep)
+       ├─ check scheduled tasks
+       ├─ poll Telegram (blocks up to 30s, returns instantly on message)
+       ├─ process messages → dispatch to AI provider
+       │    └─ "typing..." indicator shown while LLM is working
+       └─ repeat
+```
+
+- **No fixed interval or polling delay** — Telegram holds the connection open and pushes updates as soon as they arrive
+- **Typing indicator** — while the AI provider is generating a response, Telegram shows "typing..." in the chat (persists for the full duration, not just 5 seconds)
+- **Interactive mode** (`./start.sh`) — loops forever, Ctrl+C to stop
+- **Cron mode** (`./start.sh --once`) — listens for the configured interval (default 30m), then exits
 
 ## Requirements
 
-- Docker + Docker Compose
 - bash, curl, jq (on host)
+- Docker + Docker Compose (for server deployment, not needed locally)
 - Telegram Bot (create via @BotFather)
 - Telegram Group with Topics enabled
 
 ## Configuration
 
-Copy `config/agent.conf.example` to `config/agent.conf` and fill in your values.
+Copy `config/agent.conf.example` to `config/agent.conf`:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather | (required) |
+| `TELEGRAM_GROUP_ID` | Group ID (negative number) | (required) |
+| `DEFAULT_PROVIDER` | AI provider name | `claude` |
+| `HEARTBEAT_INTERVAL_MIN` | Cron mode listen duration (minutes) | `30` |
+| `HEARTBEAT_TIMEOUT_SEC` | Max provider execution time | `3600` |
+| `GIT_DIR` | Working directory for repos | `$AGENT_HOME/git` |
+| `PROVIDER_CMD_<name>` | Command template per provider | — |
 
 ### Adding Providers
 
-Each provider has its own Dockerfile in `docker/<provider>/`. To add a new one:
+Each provider needs a command template in `config/agent.conf`:
 
-1. Create `docker/<provider>/Dockerfile`
-2. Add a service in `docker/docker-compose.yml`
-3. Add `PROVIDER_CMD_<provider>` to your `config/agent.conf`
-4. Build: `docker compose -f docker/docker-compose.yml build <provider>`
+```bash
+# Local (runs CLI directly):
+PROVIDER_CMD_claude='cd {workdir} && claude --dangerously-skip-permissions -p "$(cat {prompt_file})"'
 
-### Scheduled Tasks
+# Docker (for server deployment):
+PROVIDER_CMD_claude='docker compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -v {prompt_file}:/tmp/prompt:ro -w {workdir} claude claude -p "$(cat /tmp/prompt)"'
+```
 
-Edit `data/schedules.json` to add recurring tasks:
+Dockerfiles live in `docker/<provider>/`.
+
+## Scheduled Tasks
+
+Edit `data/schedules.json`:
 
 ```json
 [
@@ -50,14 +99,16 @@ Edit `data/schedules.json` to add recurring tasks:
 ]
 ```
 
-### Special Commands
+## Special Commands
 
 Send these in any Telegram topic:
 
-- `/clone <repo-url>` — clone a repo into `/git/`
-- `/provider <name>` — switch AI provider for this topic
-- `/close` — deactivate this topic
-- `/status` — list open topics and next scheduled run
+| Command | Description |
+|---------|-------------|
+| `/clone <url>` | Clone a repo into the git directory |
+| `/provider <name>` | Switch AI provider for this topic |
+| `/close` | Deactivate this topic |
+| `/status` | List open topics and current provider |
 
 ## License
 

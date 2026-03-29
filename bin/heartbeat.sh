@@ -41,8 +41,10 @@ for ((i=0; i<due_count; i++)); do
   full_prompt=$(build_prompt "$topic_id" "$prompt")
   ensure_topic_dir "$topic_id" > /dev/null
 
-  # Run provider
+  # Run provider with typing indicator
+  telegram_typing_start "$topic_id"
   output=$(run_provider "$provider" "$full_prompt" "$workdir") || true
+  telegram_typing_stop
 
   # Post result and update memory
   telegram_send "$topic_id" "$output"
@@ -129,15 +131,15 @@ for ((i=0; i<update_count; i++)); do
   workdir=$(read_state ".topic_workdirs.\"${topic_id}\"")
   [[ -z "$workdir" || "$workdir" == "null" ]] && workdir="${GIT_DIR}"
 
-  # Send typing indicator
-  telegram_api "sendChatAction" \
-    -d "chat_id=${TELEGRAM_GROUP_ID}" \
-    -d "message_thread_id=${topic_id}" \
-    -d "action=typing" > /dev/null 2>&1
+  # Start persistent typing indicator
+  telegram_typing_start "$topic_id"
 
   # Run provider
   log "INFO" "Dispatching to ${provider}..."
   output=$(run_provider "$provider" "$full_prompt" "$workdir") || true
+
+  # Stop typing indicator
+  telegram_typing_stop
 
   if [[ -z "$output" ]]; then
     output="(no output from ${provider})"
