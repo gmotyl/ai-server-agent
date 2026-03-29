@@ -1,5 +1,5 @@
 #!/bin/bash
-# install.sh — one-command setup for ai-server-agent
+# install.sh — server deployment: build Docker, configure cron
 set -euo pipefail
 
 AGENT_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -52,12 +52,12 @@ chmod +x "${AGENT_HOME}"/bin/*.sh
 
 # 6. Print cron instructions
 INTERVAL="${HEARTBEAT_INTERVAL_MIN:-30}"
-CRON_LINE="*/${INTERVAL} * * * * cd ${AGENT_HOME} && flock -n data/heartbeat.lock bin/heartbeat.sh >> logs/agent.log 2>&1"
+CRON_LINE="*/${INTERVAL} * * * * cd ${AGENT_HOME} && flock -n data/heartbeat.lock ./start.sh --once >> logs/agent.log 2>&1"
 
 echo ""
-echo "=== Setup complete ==="
+echo "=== Server setup complete ==="
 echo ""
-echo "Add this line to your crontab:"
+echo "Add this line to your crontab (runs every ${INTERVAL}m with adaptive polling):"
 echo ""
 echo "  ${CRON_LINE}"
 echo ""
@@ -66,5 +66,5 @@ echo "  sudo vi /etc/config/crontab"
 echo "  sudo crontab /etc/config/crontab"
 echo "  sudo /etc/init.d/crond.sh restart"
 echo ""
-echo "Test manually: bin/heartbeat.sh"
+echo "Or run locally: ./start.sh"
 echo ""
