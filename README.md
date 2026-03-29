@@ -15,13 +15,7 @@ Supports Claude Code, Gemini CLI, Codex, or any CLI tool with auto-approve mode.
 ./start.sh
 ```
 
-The agent connects to your Telegram group and starts listening. Send a message in any topic — the agent picks it up within 30 seconds.
-
-Default heartbeat: **10 minutes**. Override with `-i` (seconds):
-
-```bash
-./start.sh -i 300   # 5-minute heartbeat
-```
+The agent connects to your Telegram group and starts listening. Messages are picked up **near-instantly** via Telegram's long polling.
 
 ## Server Deployment (Cron)
 
@@ -32,30 +26,26 @@ For a persistent server (NAS, VPS):
 3. Run `./install.sh` — builds Docker image, prints cron line
 4. Add the cron line to your crontab
 
-The cron job runs `./start.sh --once` which executes a single heartbeat cycle with adaptive polling, then exits. Default interval: **30 minutes** (set `HEARTBEAT_INTERVAL_MIN` in config).
+The cron job runs `./start.sh --once` which listens for the configured interval (default **30 minutes**, set `HEARTBEAT_INTERVAL_MIN` in config), then exits. The next cron invocation picks up where it left off.
 
-## Adaptive Polling
+## How It Works
 
-The agent uses **debounced adaptive polling** to balance responsiveness with efficiency:
+The agent uses **Telegram long polling** for near-instant message delivery:
 
 ```
-[heartbeat] → process message → LLM replies
-  wait 30s  → new message? → yes → process, reset to 30s (debounce)
-  wait 30s  → new message? → no  → back off
-  wait 60s  → no  → back off
-  wait 120s → no  → back off
-  wait 240s → exceeds heartbeat interval → cycle complete
+./start.sh
+  └─ heartbeat loop (tight, no sleep)
+       ├─ check scheduled tasks
+       ├─ poll Telegram (blocks up to 30s, returns instantly on message)
+       ├─ process messages → dispatch to AI provider
+       │    └─ "typing..." indicator shown while LLM is working
+       └─ repeat
 ```
 
-**How it works:**
-- After any activity, the agent checks again in **30 seconds** expecting a follow-up
-- If the user replies, the timer resets to 30s (debounce)
-- If no reply, the interval doubles: 30s → 60s → 120s → 240s...
-- Once the interval exceeds the heartbeat setting, the cycle ends
-- In interactive mode (`./start.sh`), a new cycle starts immediately
-- In cron mode (`./start.sh --once`), the process exits
-
-This means conversations feel **near-instant** (worst case 30s response time) while idle periods use minimal resources.
+- **No fixed interval or polling delay** — Telegram holds the connection open and pushes updates as soon as they arrive
+- **Typing indicator** — while the AI provider is generating a response, Telegram shows "typing..." in the chat (persists for the full duration, not just 5 seconds)
+- **Interactive mode** (`./start.sh`) — loops forever, Ctrl+C to stop
+- **Cron mode** (`./start.sh --once -i 1800`) — listens for 30 minutes, then exits
 
 ## Requirements
 

@@ -9,8 +9,6 @@ source "${SCRIPT_DIR}/../lib/memory.sh"
 source "${SCRIPT_DIR}/../lib/provider.sh"
 load_config
 
-MESSAGES_PROCESSED=0
-
 log "INFO" "=== Heartbeat start ==="
 
 # --- 1. Scheduled tasks ---
@@ -43,15 +41,16 @@ for ((i=0; i<due_count; i++)); do
   full_prompt=$(build_prompt "$topic_id" "$prompt")
   ensure_topic_dir "$topic_id" > /dev/null
 
-  # Run provider
+  # Run provider with typing indicator
+  telegram_typing_start "$topic_id"
   output=$(run_provider "$provider" "$full_prompt" "$workdir") || true
+  telegram_typing_stop
 
   # Post result and update memory
   telegram_send "$topic_id" "$output"
   append_topic_context "$topic_id" "[scheduled] $prompt" "$output" "$provider"
   log_message "$topic_id" "schedule" "$prompt"
   log_message "$topic_id" "$provider" "$output"
-  MESSAGES_PROCESSED=1
 
   # Mark as run
   current_window=$(date '+%Y-%m-%d-%H-%M')
@@ -68,7 +67,7 @@ update_count=$(echo "$updates" | jq '.result | length')
 if [[ "$update_count" -eq 0 ]]; then
   log "INFO" "No new messages"
   log "INFO" "=== Heartbeat end ==="
-  exit "$( [[ "$MESSAGES_PROCESSED" -eq 1 ]] && echo 10 || echo 0 )"
+  exit 0
 fi
 
 # Update offset to highest update_id + 1
@@ -132,15 +131,15 @@ for ((i=0; i<update_count; i++)); do
   workdir=$(read_state ".topic_workdirs.\"${topic_id}\"")
   [[ -z "$workdir" || "$workdir" == "null" ]] && workdir="${GIT_DIR}"
 
-  # Send typing indicator
-  telegram_api "sendChatAction" \
-    -d "chat_id=${TELEGRAM_GROUP_ID}" \
-    -d "message_thread_id=${topic_id}" \
-    -d "action=typing" > /dev/null 2>&1
+  # Start persistent typing indicator
+  telegram_typing_start "$topic_id"
 
   # Run provider
   log "INFO" "Dispatching to ${provider}..."
   output=$(run_provider "$provider" "$full_prompt" "$workdir") || true
+
+  # Stop typing indicator
+  telegram_typing_stop
 
   if [[ -z "$output" ]]; then
     output="(no output from ${provider})"
@@ -154,8 +153,6 @@ for ((i=0; i<update_count; i++)); do
   log_message "$topic_id" "$provider" "$output"
 
   log "INFO" "Response posted to topic ${topic_id}"
-  MESSAGES_PROCESSED=1
 done
 
 log "INFO" "=== Heartbeat end ==="
-exit "$( [[ "$MESSAGES_PROCESSED" -eq 1 ]] && echo 10 || echo 0 )"

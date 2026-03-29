@@ -9,12 +9,38 @@ telegram_api() {
 }
 
 # Poll for new messages since last offset
+# Uses POLL_TIMEOUT env var (default 5s). Set higher for long polling.
 telegram_poll() {
   local offset="$1"
   telegram_api "getUpdates" \
     -d "offset=${offset}" \
-    -d "timeout=5" \
+    -d "timeout=${POLL_TIMEOUT:-5}" \
     -d "allowed_updates=[\"message\"]"
+}
+
+# Start persistent typing indicator (background loop).
+# Sets TYPING_PID variable. Call telegram_typing_stop to clean up.
+telegram_typing_start() {
+  local topic_id="$1"
+  (
+    while true; do
+      telegram_api "sendChatAction" \
+        -d "chat_id=${TELEGRAM_GROUP_ID}" \
+        -d "message_thread_id=${topic_id}" \
+        -d "action=typing" > /dev/null 2>&1
+      sleep 4
+    done
+  ) &
+  TYPING_PID=$!
+}
+
+# Stop persistent typing indicator
+telegram_typing_stop() {
+  if [[ -n "${TYPING_PID:-}" ]]; then
+    kill "$TYPING_PID" 2>/dev/null || true
+    wait "$TYPING_PID" 2>/dev/null || true
+    TYPING_PID=""
+  fi
 }
 
 # Send text message to a topic

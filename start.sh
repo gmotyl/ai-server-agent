@@ -1,22 +1,21 @@
 #!/bin/bash
-# start.sh — run the ai-server-agent with adaptive polling
+# start.sh — run the ai-server-agent with long polling
 #
 # Usage:
-#   ./start.sh              # interactive mode, loops forever (default 10m heartbeat)
-#   ./start.sh --once       # single cycle + adaptive burst, then exit (for cron)
-#   ./start.sh -i 300       # custom heartbeat interval in seconds
+#   ./start.sh              # interactive mode, loops forever (default 10m)
+#   ./start.sh --once       # single cycle, then exit (for cron)
+#   ./start.sh -i 300       # custom interval in seconds
 #
-# Adaptive polling (debounce):
-#   After each heartbeat, polls at 30s intervals. If a message is processed,
-#   resets to 30s (debounce). If idle, backs off exponentially (30→60→120→240...)
-#   until reaching the heartbeat interval, then starts the next cycle or exits.
+# Long polling:
+#   Uses Telegram's long polling (30s timeout) for near-instant message pickup.
+#   In interactive mode, heartbeat runs in a tight loop — no sleep between beats.
+#   In --once mode, heartbeat loops until the interval expires, then exits.
 
 set -euo pipefail
 
 AGENT_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODE="loop"
 INTERVAL=""
-MIN_POLL=30
 
 # --- Parse arguments ---
 while [[ $# -gt 0 ]]; do
@@ -34,7 +33,7 @@ if [[ -n "$INTERVAL" ]] && ! [[ "$INTERVAL" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-# --- Resolve heartbeat interval ---
+# --- Resolve interval ---
 # Priority: -i flag > config file > mode default (600s interactive, 1800s cron)
 if [[ -z "$INTERVAL" ]]; then
   if [[ -f "${AGENT_HOME}/config/agent.conf" ]]; then
@@ -81,45 +80,28 @@ if [[ -z "${TELEGRAM_BOT_TOKEN:-}" || -z "${TELEGRAM_GROUP_ID:-}" ]]; then
   exit 1
 fi
 
+# --- Long polling config ---
+export POLL_TIMEOUT=30
+
 # --- Banner ---
 if [[ "$MODE" == "loop" ]]; then
   echo "=== ai-server-agent ==="
   echo "Location:  ${AGENT_HOME}"
-  echo "Heartbeat: $((INTERVAL / 60))m (${INTERVAL}s)"
   echo "Mode:      interactive (Ctrl+C to stop)"
+  echo "Polling:   long poll (${POLL_TIMEOUT}s timeout)"
   echo ""
 fi
 
-# --- Adaptive polling (debounce) ---
-# Runs heartbeat, then polls with exponential backoff.
-# Activity resets the timer to MIN_POLL (debounce).
-adaptive_cycle() {
-  # Initial heartbeat
-  local exit_code=0
-  "${AGENT_HOME}/bin/heartbeat.sh" 2>&1 || exit_code=$?
-
-  local delay=$MIN_POLL
-
-  while [[ "$delay" -lt "$INTERVAL" ]]; do
-    sleep "$delay"
-    exit_code=0
-    "${AGENT_HOME}/bin/heartbeat.sh" 2>&1 || exit_code=$?
-
-    if [[ "$exit_code" -eq 10 ]]; then
-      # Activity — reset debounce
-      delay=$MIN_POLL
-    else
-      # Idle — back off
-      delay=$((delay * 2))
-    fi
-  done
-}
-
 # --- Main ---
 if [[ "$MODE" == "once" ]]; then
-  adaptive_cycle
+  # Run heartbeat in a loop until interval expires
+  deadline=$(( $(date +%s) + INTERVAL ))
+  while [[ $(date +%s) -lt $deadline ]]; do
+    "${AGENT_HOME}/bin/heartbeat.sh" 2>&1 || true
+  done
 else
+  # Interactive: tight loop, long polling handles the wait
   while true; do
-    adaptive_cycle
+    "${AGENT_HOME}/bin/heartbeat.sh" 2>&1 || true
   done
 fi
