@@ -1,0 +1,23 @@
+services:
+  claude:
+    build: claude
+    volumes:
+      - ${GIT_DIR:-../git}:/git
+      - claude-home:/home/agent
+      - ${HOME}/.ssh:/home/agent/.ssh:ro
+      - ${AGENT_HOME:-.}/memory:/memory
+    working_dir: /git
+
+  # Add more providers here:
+  # gemini:
+  #   build: gemini
+  #   volumes:
+  #     - ${GIT_DIR:-../git}:/git
+  #     - gemini-home:/home/agent
+  #     - ${HOME}/.ssh:/home/agent/.ssh:ro
+  #     - ${AGENT_HOME:-.}/memory:/memory
+  #   working_dir: /git
+
+volumes:
+  claude-home:
+  # gemini-home:
