@@ -162,9 +162,9 @@ export PATH="/share/CACHEDEV1_DATA/.local/bin:/share/CACHEDEV1_DATA/.qpkg/contai
 #   3. Don't use -w flag (use working_dir from docker-compose.yml)
 PROVIDER_CMD_claude='/usr/local/lib/docker/cli-plugins/docker-compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -v {prompt_file}:/tmp/prompt:ro claude sh -c '"'"'claude --dangerously-skip-permissions -p "$(cat /tmp/prompt)"'"'"''
 
-# Paths
-AGENT_HOME="/share/CACHEDEV1_DATA/ai-server-agent"
-GIT_DIR="/share/homes/your_user/git"
+# Paths (must be exported — provider runs in a bash -c subprocess)
+export AGENT_HOME="/share/CACHEDEV1_DATA/ai-server-agent"
+export GIT_DIR="/share/homes/your_user/git"
 ```
 
 #### PROVIDER_CMD gotchas on QNAP
