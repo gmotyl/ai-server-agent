@@ -4,6 +4,11 @@
 set -euo pipefail
 
 AGENT_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ ! -f "${AGENT_HOME}/config/agent.conf" ]]; then
+  echo "ERROR: config/agent.conf not found. Copy config/agent.conf.example and configure it first."
+  exit 1
+fi
 source "${AGENT_HOME}/config/agent.conf"
 
 /usr/local/lib/docker/cli-plugins/docker-compose \

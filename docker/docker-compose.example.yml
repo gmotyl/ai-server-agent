@@ -1,6 +1,6 @@
 services:
   claude:
-    image: claude-news-claude-news
+    image: ${IMAGE_NAME:-claude-news-claude-news}
     entrypoint: []
     volumes:
       - ${GIT_DIR:-/your/git/dir}:/git
