@@ -17,9 +17,11 @@ DEFAULT_PROVIDER="claude"
 # {workdir} = working directory inside the container
 #
 # Docker (for server deployment):
-PROVIDER_CMD_claude='docker compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -v {prompt_file}:/tmp/prompt:ro -w {workdir} claude claude --dangerously-skip-permissions -p "$(cat /tmp/prompt)"'
-PROVIDER_CMD_gemini='docker compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -v {prompt_file}:/tmp/prompt:ro -w {workdir} gemini gemini -p "$(cat /tmp/prompt)"'
-PROVIDER_CMD_codex='docker compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -v {prompt_file}:/tmp/prompt:ro -w {workdir} codex codex --auto-approve -p "$(cat /tmp/prompt)"'
+# NOTE: prompt is passed via stdin (-i) so no bind mount needed.
+# The temp file stays mode 600 (owner-only); Docker reads it through the pipe.
+PROVIDER_CMD_claude="docker compose -f \${AGENT_HOME}/docker/docker-compose.yml run --rm -i -w {workdir} claude sh -c 'claude --dangerously-skip-permissions -p \"\$(cat)\"' < {prompt_file}"
+PROVIDER_CMD_gemini="docker compose -f \${AGENT_HOME}/docker/docker-compose.yml run --rm -i -w {workdir} gemini sh -c 'gemini -p \"\$(cat)\"' < {prompt_file}"
+PROVIDER_CMD_codex="docker compose -f \${AGENT_HOME}/docker/docker-compose.yml run --rm -i -w {workdir} codex sh -c 'codex --auto-approve -p \"\$(cat)\"' < {prompt_file}"
 #
 # Local (for testing without Docker — runs CLI directly on host):
 # PROVIDER_CMD_claude='cd {workdir} && claude --dangerously-skip-permissions -p "$(cat {prompt_file})"'
