@@ -98,8 +98,16 @@ fi
 if [[ "$MODE" == "once" ]]; then
   # Run heartbeat in a loop until interval expires
   deadline=$(( $(date +%s) + INTERVAL ))
+  rm -f "${AGENT_HOME}/data/.had_activity"
   while [[ $(date +%s) -lt $deadline ]]; do
     "${AGENT_HOME}/bin/heartbeat.sh" 2>&1 || true
+    # If we just processed messages, extend deadline to catch follow-ups
+    if [[ -f "${AGENT_HOME}/data/.had_activity" ]]; then
+      rm -f "${AGENT_HOME}/data/.had_activity"
+      new_deadline=$(( $(date +%s) + 300 ))  # at least 5 more minutes
+      [[ $new_deadline -gt $deadline ]] && deadline=$new_deadline
+      echo "Extended deadline by 5m for follow-up messages"
+    fi
   done
 else
   # Interactive: tight loop, long polling handles the wait

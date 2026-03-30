@@ -155,4 +155,6 @@ for ((i=0; i<update_count; i++)); do
   log "INFO" "Response posted to topic ${topic_id}"
 done
 
+# Signal to start.sh that we processed messages (extend deadline for follow-ups)
+touch "${AGENT_HOME}/data/.had_activity"
 log "INFO" "=== Heartbeat end ==="
