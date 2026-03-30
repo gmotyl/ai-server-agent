@@ -18,6 +18,15 @@ if [[ ! -f "${AGENT_HOME}/config/agent.conf" ]]; then
   exit 0
 fi
 
+# 2b. Docker Compose check
+if [[ ! -f "${AGENT_HOME}/docker/docker-compose.yml" ]]; then
+  cp "${AGENT_HOME}/docker/docker-compose.example.yml" "${AGENT_HOME}/docker/docker-compose.yml"
+  echo ""
+  echo "Created docker/docker-compose.yml from template."
+  echo "Edit it with your host-specific paths (GIT_DIR, AGENT_HOME, SSH path), then re-run this script."
+  exit 0
+fi
+
 source "${AGENT_HOME}/config/agent.conf"
 
 # Validate required config

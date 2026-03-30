@@ -98,8 +98,18 @@ fi
 if [[ "$MODE" == "once" ]]; then
   # Run heartbeat in a loop until interval expires
   deadline=$(( $(date +%s) + INTERVAL ))
+  rm -f "${AGENT_HOME}/data/.had_activity"
+  extension=30  # exponential backoff: 30s, 60s, 120s, 240s, 480s...
   while [[ $(date +%s) -lt $deadline ]]; do
     "${AGENT_HOME}/bin/heartbeat.sh" 2>&1 || true
+    # If we just processed messages, extend deadline with exponential backoff
+    if [[ -f "${AGENT_HOME}/data/.had_activity" ]]; then
+      rm -f "${AGENT_HOME}/data/.had_activity"
+      new_deadline=$(( $(date +%s) + extension ))
+      [[ $new_deadline -gt $deadline ]] && deadline=$new_deadline
+      echo "Extended deadline by ${extension}s for follow-up messages"
+      extension=$(( extension * 2 ))
+    fi
   done
 else
   # Interactive: tight loop, long polling handles the wait

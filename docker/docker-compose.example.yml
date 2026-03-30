@@ -1,0 +1,17 @@
+services:
+  claude:
+    image: claude-news-claude-news
+    entrypoint: []
+    volumes:
+      - ${GIT_DIR:-/your/git/dir}:/git
+      - ${AGENT_HOME:-/your/agent/home}:/git/ai-server-agent
+      - claude-home:/home/claude
+      - /your/home/.ssh:/home/claude/.ssh:ro
+      - ${AGENT_HOME:-/your/agent/home}/memory:/memory
+    working_dir: /git/projects
+    network_mode: bridge
+
+volumes:
+  claude-home:
+    external: true
+    name: claude-news_claude-home
