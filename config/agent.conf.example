@@ -28,10 +28,11 @@ PROVIDER_CMD_codex="docker compose -f \${AGENT_HOME}/docker/docker-compose.yml r
 # PROVIDER_CMD_gemini='cd {workdir} && gemini -p "$(cat {prompt_file})"'
 
 # --- Paths ---
+# IMPORTANT: use 'export' so these are visible to provider subprocesses
 # AGENT_HOME is auto-detected from install location, override if needed
-# AGENT_HOME="/share/CACHEDEV1_DATA/ai-server-agent"
+# export AGENT_HOME="/share/CACHEDEV1_DATA/ai-server-agent"
 # GIT_DIR defaults to ${AGENT_HOME}/git
-# GIT_DIR="/share/CACHEDEV1_DATA/ai-server-agent/git"
+# export GIT_DIR="/share/CACHEDEV1_DATA/ai-server-agent/git"
 
 # --- Telegram Message Limits ---
 MAX_MESSAGE_LENGTH=4096

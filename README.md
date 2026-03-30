@@ -28,6 +28,10 @@ For a persistent server (NAS, VPS):
 
 The cron job runs `./start.sh --once` which listens for the configured interval (default **30 minutes**, set `HEARTBEAT_INTERVAL_MIN` in config), then exits. The next cron invocation picks up where it left off.
 
+### Platform-specific guides
+
+- **[QNAP NAS](docs/qnap-deployment.md)** — full walkthrough: SSH setup, Docker (Container Station), missing tools (jq, flock), cron on QTS, and common gotchas
+
 ## How It Works
 
 The agent uses **Telegram long polling** for near-instant message delivery:
