@@ -219,28 +219,20 @@ Send a message in a Telegram topic. The agent should respond within seconds.
 
 ### 8. Set up cron
 
-QNAP uses `/etc/config/crontab` (not the standard `crontab -e`).
-
-> **Note:** QNAP doesn't have `flock`. Use `mkdir` as a lock (atomic on Linux):
+Run `setup-cron.sh` as the **deployment user** (e.g. `gomes`) — it registers the heartbeat in that user's crontab so all file operations (memory, state, logs) run as the same user as Docker:
 
 ```bash
-sudo vi /etc/config/crontab
+bash /share/CACHEDEV1_DATA/ai-server-agent/setup-cron.sh
 ```
 
-Add this line:
+This writes the entry to `/tmp/cron/crontabs/gomes` (active immediately) and restarts crond.
 
-```
-*/30 * * * * mkdir /share/CACHEDEV1_DATA/ai-server-agent/data/heartbeat.lock 2>/dev/null && (export PATH=/share/CACHEDEV1_DATA/.local/bin:/share/CACHEDEV1_DATA/.qpkg/container-station/bin:/opt/bin:$PATH; cd /share/CACHEDEV1_DATA/ai-server-agent && ./start.sh --once >> logs/agent.log 2>&1; rmdir data/heartbeat.lock) || true
-```
+> **Note:** QNAP resets user crontabs on reboot. For persistence, add setup-cron.sh to autorun (run once as admin):
+> ```bash
+> echo 'su gomes -c "/share/CACHEDEV1_DATA/ai-server-agent/setup-cron.sh"' | sudo tee -a /etc/config/autorun.sh
+> ```
 
-Apply:
-
-```bash
-sudo crontab /etc/config/crontab
-sudo /etc/init.d/crond.sh restart
-```
-
-> **Warning:** QTS firmware updates may reset `/etc/config/crontab`. After an update, verify the cron entry is still there.
+> **Warning:** Do NOT add the cron entry to `/etc/config/crontab` — that runs as `admin` (root), causing file ownership mismatches with Docker (which runs as the deployment user).
 
 ## Troubleshooting
 
