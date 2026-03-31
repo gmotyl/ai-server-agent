@@ -80,4 +80,3 @@ fi
 while true; do
   "${AGENT_HOME}/bin/heartbeat.sh" 2>&1 || true
 done
-fi
