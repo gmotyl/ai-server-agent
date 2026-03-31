@@ -14,6 +14,9 @@ ENTRY="*/30 * * * * mkdir -p ${AGENT_HOME}/data && mkdir ${AGENT_HOME}/data/hear
 
 ACTIVE_CRONTAB=/tmp/cron/crontabs/admin
 
+# Clean up stale lock from a previous crashed/killed run
+rmdir "${AGENT_HOME}/data/heartbeat.lock" 2>/dev/null || true
+
 # Ensure entry is in the persistent config
 if ! grep -q "$MARKER" "$CRONTAB" 2>/dev/null; then
   echo "$ENTRY" >> "$CRONTAB"
