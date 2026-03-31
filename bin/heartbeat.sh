@@ -9,8 +9,6 @@ source "${SCRIPT_DIR}/../lib/memory.sh"
 source "${SCRIPT_DIR}/../lib/provider.sh"
 load_config
 
-log "INFO" "=== Heartbeat start ==="
-
 # --- 1. Scheduled tasks ---
 due_tasks=$("${SCRIPT_DIR}/schedule-check.sh")
 due_count=$(echo "$due_tasks" | jq 'length')
@@ -65,10 +63,10 @@ updates=$(telegram_poll "$last_offset")
 update_count=$(echo "$updates" | jq '.result | length')
 
 if [[ "$update_count" -eq 0 ]]; then
-  log "INFO" "No new messages"
-  log "INFO" "=== Heartbeat end ==="
   exit 0
 fi
+
+log "INFO" "=== Heartbeat start ==="
 
 # Update offset to highest update_id + 1
 new_offset=$(echo "$updates" | jq '[.result[].update_id] | max + 1')
