@@ -8,6 +8,9 @@ TELEGRAM_GROUP_ID=""
 # --- Heartbeat ---
 HEARTBEAT_INTERVAL_MIN=30
 HEARTBEAT_TIMEOUT_SEC=3600
+# How long to wait for a Telegram message before looping (seconds).
+# Higher = less disk activity on NAS. Max ~55 (Telegram API limit).
+POLL_TIMEOUT=55
 
 # --- Default AI Provider ---
 DEFAULT_PROVIDER="claude"
