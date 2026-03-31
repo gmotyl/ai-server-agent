@@ -15,41 +15,14 @@ set -euo pipefail
 
 AGENT_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODE="loop"
-INTERVAL=""
 
 # --- Parse arguments ---
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --once) MODE="once"; shift ;;
-    -i)     [[ -z "${2:-}" ]] && echo "Error: -i requires an interval in seconds" && exit 1
-            INTERVAL="$2"; shift 2 ;;
     *)      echo "Unknown option: $1"; exit 1 ;;
   esac
 done
-
-# Validate -i value if provided
-if [[ -n "$INTERVAL" ]] && ! [[ "$INTERVAL" =~ ^[0-9]+$ ]]; then
-  echo "Error: interval must be a positive integer (seconds)"
-  exit 1
-fi
-
-# -i only applies to --once mode
-if [[ -n "$INTERVAL" && "$MODE" != "once" ]]; then
-  echo "Error: -i is only used with --once (cron mode)"
-  exit 1
-fi
-
-# --- Resolve --once interval ---
-# Priority: -i flag > config file > default 1800s (30m)
-if [[ "$MODE" == "once" && -z "$INTERVAL" ]]; then
-  if [[ -f "${AGENT_HOME}/config/agent.conf" ]]; then
-    source "${AGENT_HOME}/config/agent.conf"
-    if [[ -n "${HEARTBEAT_INTERVAL_MIN:-}" ]]; then
-      INTERVAL=$((HEARTBEAT_INTERVAL_MIN * 60))
-    fi
-  fi
-  [[ -z "$INTERVAL" ]] && INTERVAL=1800
-fi
 
 # --- Ensure runtime dirs and state ---
 mkdir -p "${AGENT_HOME}"/{memory/topics,data,logs}
@@ -82,7 +55,8 @@ fi
 # --- Lock cleanup on exit ---
 # The cron wrapper creates data/heartbeat.lock before invoking this script.
 # Register a trap so the lock is always removed even if we crash or are killed.
-trap "rmdir '${AGENT_HOME}/data/heartbeat.lock' 2>/dev/null || true" EXIT INT TERM
+trap "rmdir '${AGENT_HOME}/data/heartbeat.lock' 2>/dev/null || true" EXIT
+trap "exit 130" INT TERM
 
 # --- Long polling config ---
 export POLL_TIMEOUT=30
@@ -95,30 +69,15 @@ if [[ "$MODE" == "loop" ]]; then
   echo "Polling:  long poll (${POLL_TIMEOUT}s timeout)"
   echo ""
 elif [[ "$MODE" == "once" ]]; then
-  echo "=== ai-server-agent (cron) ==="
-  echo "Listening for $((INTERVAL / 60))m (${INTERVAL}s), then exit"
+  echo "=== ai-server-agent (watchdog) ==="
+  echo "Running continuously. Cron restarts if crashed."
 fi
 
 # --- Main ---
-if [[ "$MODE" == "once" ]]; then
-  # Run heartbeat in a loop until interval expires
-  deadline=$(( $(date +%s) + INTERVAL ))
-  rm -f "${AGENT_HOME}/data/.had_activity"
-  extension=30  # exponential backoff: 30s, 60s, 120s, 240s, 480s...
-  while [[ $(date +%s) -lt $deadline ]]; do
-    "${AGENT_HOME}/bin/heartbeat.sh" 2>&1 || true
-    # If we just processed messages, extend deadline with exponential backoff
-    if [[ -f "${AGENT_HOME}/data/.had_activity" ]]; then
-      rm -f "${AGENT_HOME}/data/.had_activity"
-      new_deadline=$(( $(date +%s) + extension ))
-      [[ $new_deadline -gt $deadline ]] && deadline=$new_deadline
-      echo "Extended deadline by ${extension}s for follow-up messages"
-      extension=$(( extension * 2 ))
-    fi
-  done
-else
-  # Interactive: tight loop, long polling handles the wait
-  while true; do
-    "${AGENT_HOME}/bin/heartbeat.sh" 2>&1 || true
-  done
+# Both modes run the same continuous loop.
+# In watchdog (--once) mode the cron holds a lock file; the trap above releases
+# it on exit so the next cron invocation can detect the crash and restart.
+while true; do
+  "${AGENT_HOME}/bin/heartbeat.sh" 2>&1 || true
+done
 fi
