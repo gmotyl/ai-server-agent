@@ -1,19 +1,21 @@
 #!/bin/sh
-# setup-cron.sh — register all gomes cron jobs (agent heartbeat + news generation)
-# Run once manually as gomes, or add to /etc/config/autorun.sh for reboot persistence.
+# setup-cron.sh — register gomes cron jobs (agent heartbeat + news generation)
+# Safe to call as root (from autorun.sh) or as gomes directly.
 #
-# To survive reboots automatically (run this once as admin):
-#   echo 'su gomes -c "/share/CACHEDEV1_DATA/ai-server-agent/setup-cron.sh"' >> /etc/config/autorun.sh
-#
-# If called from autorun.sh as root, switches to gomes automatically.
+# Add to /etc/config/autorun.sh for reboot persistence (run once as admin):
+#   echo "/share/CACHEDEV1_DATA/ai-server-agent/setup-cron.sh" >> /etc/config/autorun.sh
 
 AGENT_HOME="$(cd "$(dirname "$0")" && pwd)"
 CRON_PATH=/share/CACHEDEV1_DATA/.qpkg/container-station/bin
 ACTIVE_CRONTAB=/tmp/cron/crontabs/gomes
 
-# If running as root, re-exec as gomes
+# If running as root: create gomes crontab file if missing
 if [ "$(id -u)" = "0" ]; then
-  exec su gomes -c "$0"
+  if [ ! -f "$ACTIVE_CRONTAB" ]; then
+    touch "$ACTIVE_CRONTAB"
+    chown gomes "$ACTIVE_CRONTAB"
+    chmod 600 "$ACTIVE_CRONTAB"
+  fi
 fi
 
 # Clean up stale agent lock
@@ -31,7 +33,7 @@ changed=0
 add_if_missing() {
   local marker="$1"
   local entry="$2"
-  if ! grep -q "$marker" "$ACTIVE_CRONTAB" 2>/dev/null; then
+  if ! grep -qF "$marker" "$ACTIVE_CRONTAB" 2>/dev/null; then
     echo "$entry" >> "$ACTIVE_CRONTAB"
     echo "Added: $marker"
     changed=1
@@ -39,8 +41,8 @@ add_if_missing() {
 }
 
 add_if_missing "ai-server-agent"  "$AGENT_ENTRY"
-add_if_missing "claude-news.*9 \*"  "$NEWS_ENTRY_AM"
-add_if_missing "claude-news.*21 \*" "$NEWS_ENTRY_PM"
+add_if_missing "9 * * * * /usr/local"  "$NEWS_ENTRY_AM"
+add_if_missing "21 * * * * /usr/local" "$NEWS_ENTRY_PM"
 
 if [ "$changed" = "1" ]; then
   /etc/init.d/crond.sh restart 2>/dev/null || true
