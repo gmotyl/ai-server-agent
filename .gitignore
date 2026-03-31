@@ -7,3 +7,6 @@ git/
 
 # OS
 .DS_Store
+
+# Docker Compose — local config with host-specific paths (use docker/docker-compose.example.yml as template)
+docker/docker-compose.yml

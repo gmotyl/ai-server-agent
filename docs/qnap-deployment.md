@@ -117,7 +117,7 @@ This builds from `docker/claude/Dockerfile` — a node:22-slim image with Claude
 >     image: your-existing-claude-image
 >     entrypoint: []
 >     volumes:
->       - ${GIT_DIR:-/share/homes/user/git}:/git
+>       - /share/homes/your_user/git:/git   # host ~/git → container /git
 >       - claude-home:/home/claude
 >       - ~/.ssh:/home/claude/.ssh:ro
 >     working_dir: /git
@@ -149,33 +149,54 @@ cp config/agent.conf.example config/agent.conf
 Edit `config/agent.conf`:
 
 ```bash
+# System PATH for QNAP (add this at the top)
+export PATH="/share/CACHEDEV1_DATA/.local/bin:/share/CACHEDEV1_DATA/.qpkg/container-station/bin:/opt/bin:$PATH"
+
 # Telegram
 TELEGRAM_BOT_TOKEN="your-token-here"
 TELEGRAM_GROUP_ID="-100xxxxxxxxxx"
 
-# System PATH for QNAP (add this at the top)
-export PATH="/share/CACHEDEV1_DATA/.local/bin:/share/CACHEDEV1_DATA/.qpkg/container-station/bin:/opt/bin:$PATH"
-
-# Provider command — key differences for QNAP:
+# Provider command — QNAP-specific:
 #   1. Use full path to docker-compose (not 'docker compose')
-#   2. Wrap with sh -c so $(cat /tmp/prompt) runs INSIDE the container
-#   3. Don't use -w flag (use working_dir from docker-compose.yml)
-PROVIDER_CMD_claude='/usr/local/lib/docker/cli-plugins/docker-compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -v {prompt_file}:/tmp/prompt:ro claude sh -c '"'"'claude --dangerously-skip-permissions -p "$(cat /tmp/prompt)"'"'"''
+#   2. Prompt is passed via stdin (-i), no bind mount needed — temp file stays mode 600
+#   3. No -w flag — working_dir comes from docker-compose.yml
+PROVIDER_CMD_claude='/usr/local/lib/docker/cli-plugins/docker-compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -i claude sh -c '"'"'claude --dangerously-skip-permissions -p "$(cat)"'"'"' < {prompt_file}'
 
 # Paths (must be exported — provider runs in a bash -c subprocess)
 export AGENT_HOME="/share/CACHEDEV1_DATA/ai-server-agent"
-export GIT_DIR="/share/homes/your_user/git"
+
+# GIT_DIR: path to your git repos *inside the container* (not the host path).
+# The host path is set in docker-compose.yml volumes (e.g. ~/git:/git).
+export GIT_DIR="/git"
 ```
+
+#### Git repos volume mapping
+
+The agent mounts your local `~/git` directory into the container as `/git`. Any repos already there are immediately available to the agent. Files created or modified inside the container are reflected on the host.
+
+`docker/docker-compose.yml` controls the mount and the starting directory:
+
+```yaml
+volumes:
+  - /share/homes/your_user/git:/git   # host ~/git → container /git
+  - ${AGENT_HOME}:/git/ai-server-agent
+  - claude-home:/home/claude
+  - ~/.ssh:/home/claude/.ssh:ro
+  - ${AGENT_HOME}/memory:/memory
+working_dir: /git   # where the agent starts; change to e.g. /git/projects if preferred
+```
+
+Set `GIT_DIR="/git"` in `agent.conf` — this tells Claude where to find repos inside the container, and matches the volume mount above.
 
 #### PROVIDER_CMD gotchas on QNAP
 
 | Issue | Cause | Fix |
 |-------|-------|-----|
-| `cat: /tmp/prompt: No such file or directory` | `$(cat /tmp/prompt)` expands on the host, not inside Docker | Wrap command with `sh -c '...'` so it runs in the container |
+| `cat: Permission denied` or empty prompt | Bind-mount approach: `$(cat /tmp/prompt)` runs on host before Docker starts, or Docker can't read the temp file | Use stdin approach: `-i … sh -c 'claude -p "$(cat)"' < {prompt_file}` |
 | `docker compose: unknown command` | QNAP doesn't support `docker compose` (space) | Use `/usr/local/lib/docker/cli-plugins/docker-compose` |
-| `claude: not found` | Claude binary not in container PATH | Ensure the image has claude in PATH, or use `sh -c 'export PATH=...; claude ...'` |
-| `cat: /tmp/prompt: Permission denied` | Host `mktemp` creates files with mode 600; container user (different uid) can't read | Fixed in `lib/provider.sh` — prompt files are created with `chmod 644` |
-| Docker network creation errors | QNAP vswitch conflicts | Add `network_mode: bridge` to docker-compose.yml, or use an existing network |
+| `claude: not found` | Claude binary not in container PATH | Ensure the image has claude in PATH, or prefix with `sh -c 'export PATH=...; claude ...'` |
+| Agent starts in wrong directory | `-w {workdir}` in PROVIDER_CMD overrides docker-compose `working_dir` with a host path that doesn't exist in the container | Remove `-w` from PROVIDER_CMD; set `working_dir` in docker-compose.yml instead |
+| Docker network creation errors | QNAP vswitch conflicts | Add `network_mode: bridge` to docker-compose.yml |
 
 ### 6. Set permissions and initialize
 

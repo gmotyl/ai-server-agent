@@ -79,6 +79,11 @@ if [[ -z "${TELEGRAM_BOT_TOKEN:-}" || -z "${TELEGRAM_GROUP_ID:-}" ]]; then
   exit 1
 fi
 
+# --- Lock cleanup on exit ---
+# The cron wrapper creates data/heartbeat.lock before invoking this script.
+# Register a trap so the lock is always removed even if we crash or are killed.
+trap "rmdir '${AGENT_HOME}/data/heartbeat.lock' 2>/dev/null || true" EXIT INT TERM
+
 # --- Long polling config ---
 export POLL_TIMEOUT=30
 
