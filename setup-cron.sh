@@ -10,7 +10,7 @@ CRONTAB=/etc/config/crontab
 MARKER="ai-server-agent"
 CRON_PATH=/share/CACHEDEV1_DATA/.qpkg/container-station/bin
 
-ENTRY="*/30 * * * * mkdir ${AGENT_HOME}/data/heartbeat.lock 2>/dev/null && (export PATH=/share/CACHEDEV1_DATA/.local/bin:${CRON_PATH}:/opt/bin:\$PATH; cd ${AGENT_HOME} && ./start.sh --once >> logs/agent.log 2>&1; rmdir data/heartbeat.lock) || true"
+ENTRY="*/30 * * * * mkdir -p ${AGENT_HOME}/data && mkdir ${AGENT_HOME}/data/heartbeat.lock 2>/dev/null && (export PATH=/share/CACHEDEV1_DATA/.local/bin:${CRON_PATH}:/opt/bin:\$PATH; cd ${AGENT_HOME} && ./start.sh --once >> logs/agent.log 2>&1; rmdir data/heartbeat.lock) || true"
 
 ACTIVE_CRONTAB=/tmp/cron/crontabs/admin
 
