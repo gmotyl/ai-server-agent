@@ -160,7 +160,7 @@ TELEGRAM_GROUP_ID="-100xxxxxxxxxx"
 #   1. Use full path to docker-compose (not 'docker compose')
 #   2. Prompt is passed via stdin (-i), no bind mount needed — temp file stays mode 600
 #   3. No -w flag — working_dir comes from docker-compose.yml
-PROVIDER_CMD_claude='/usr/local/lib/docker/cli-plugins/docker-compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -i claude sh -c '"'"'claude --dangerously-skip-permissions -p "$(cat)"'"'"' < {prompt_file}'
+PROVIDER_CMD_claude='/usr/local/lib/docker/cli-plugins/docker-compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -i claude sh -c '"'"'claude --dangerously-skip-permissions -p "$(cat)" ; chmod -R a+rw /memory/ 2>/dev/null'"'"' < {prompt_file}'
 
 # Paths (must be exported — provider runs in a bash -c subprocess)
 export AGENT_HOME="/share/CACHEDEV1_DATA/ai-server-agent"

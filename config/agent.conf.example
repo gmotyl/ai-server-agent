@@ -23,9 +23,11 @@ DEFAULT_PROVIDER="claude"
 # NOTE: prompt is passed via stdin (-i) so no bind mount needed.
 # The temp file stays mode 600 (owner-only); Docker reads it through the pipe.
 # NOTE: Do NOT use -w {workdir} — let docker-compose.yml's working_dir take effect.
-PROVIDER_CMD_claude="docker compose -f \${AGENT_HOME}/docker/docker-compose.yml run --rm -i claude sh -c 'claude --dangerously-skip-permissions -p \"\$(cat)\"' < {prompt_file}"
-PROVIDER_CMD_gemini="docker compose -f \${AGENT_HOME}/docker/docker-compose.yml run --rm -i gemini sh -c 'gemini -p \"\$(cat)\"' < {prompt_file}"
-PROVIDER_CMD_codex="docker compose -f \${AGENT_HOME}/docker/docker-compose.yml run --rm -i codex sh -c 'codex --auto-approve -p \"\$(cat)\"' < {prompt_file}"
+# NOTE: chmod -R a+rw /memory/ restores write access after Docker (which may run as root)
+#       writes files that the host user (non-root) would otherwise be unable to modify.
+PROVIDER_CMD_claude="docker compose -f \${AGENT_HOME}/docker/docker-compose.yml run --rm -i claude sh -c 'claude --dangerously-skip-permissions -p \"\$(cat)\" ; chmod -R a+rw /memory/ 2>/dev/null' < {prompt_file}"
+PROVIDER_CMD_gemini="docker compose -f \${AGENT_HOME}/docker/docker-compose.yml run --rm -i gemini sh -c 'gemini -p \"\$(cat)\" ; chmod -R a+rw /memory/ 2>/dev/null' < {prompt_file}"
+PROVIDER_CMD_codex="docker compose -f \${AGENT_HOME}/docker/docker-compose.yml run --rm -i codex sh -c 'codex --auto-approve -p \"\$(cat)\" ; chmod -R a+rw /memory/ 2>/dev/null' < {prompt_file}"
 #
 # Local (for testing without Docker — runs CLI directly on host):
 # PROVIDER_CMD_claude='cd {workdir} && claude --dangerously-skip-permissions -p "$(cat {prompt_file})"'
