@@ -219,20 +219,20 @@ Send a message in a Telegram topic. The agent should respond within seconds.
 
 ### 8. Set up cron
 
-Run `setup-cron.sh` as the **deployment user** (e.g. `gomes`) — it registers the heartbeat in that user's crontab so all file operations (memory, state, logs) run as the same user as Docker:
+Add entries to `/etc/config/crontab` using `su gomes` so the agent runs as the deployment user. This survives reboots reliably without timing issues.
 
 ```bash
-bash /share/CACHEDEV1_DATA/ai-server-agent/setup-cron.sh
+sudo tee -a /etc/config/crontab << 'EOF'
+*/30 * * * * su gomes -c 'mkdir -p /share/CACHEDEV1_DATA/ai-server-agent/data && mkdir /share/CACHEDEV1_DATA/ai-server-agent/data/heartbeat.lock 2>/dev/null && (export PATH=/share/CACHEDEV1_DATA/.local/bin:/share/CACHEDEV1_DATA/.qpkg/container-station/bin:/opt/bin:$PATH; cd /share/CACHEDEV1_DATA/ai-server-agent && ./start.sh --once >> logs/agent.log 2>&1; rmdir data/heartbeat.lock) || true'
+0 9 * * * su gomes -c '/usr/local/lib/docker/cli-plugins/docker-compose -f /share/CACHEDEV1_DATA/claude-news/docker-compose.yml run --rm claude-news >> /share/CACHEDEV1_DATA/claude-news/logs/news.log 2>&1'
+0 21 * * * su gomes -c '/usr/local/lib/docker/cli-plugins/docker-compose -f /share/CACHEDEV1_DATA/claude-news/docker-compose.yml run --rm claude-news >> /share/CACHEDEV1_DATA/claude-news/logs/news.log 2>&1'
+EOF
+
+sudo crontab /etc/config/crontab
+sudo /etc/init.d/crond.sh restart
 ```
 
-This writes the entry to `/tmp/cron/crontabs/gomes` (active immediately) and restarts crond.
-
-> **Note:** QNAP resets user crontabs on reboot. For persistence, add setup-cron.sh to autorun (run once as admin):
-> ```bash
-> echo 'su gomes -c "/share/CACHEDEV1_DATA/ai-server-agent/setup-cron.sh"' | sudo tee -a /etc/config/autorun.sh
-> ```
-
-> **Warning:** Do NOT add the cron entry to `/etc/config/crontab` — that runs as `admin` (root), causing file ownership mismatches with Docker (which runs as the deployment user).
+> **Why `su gomes`:** Docker container runs as `claude` (uid=1001 = gomes). Running the shell as gomes ensures both write the same uid, avoiding `Permission denied` on memory files.
 
 ## Troubleshooting
 
