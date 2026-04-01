@@ -160,7 +160,7 @@ TELEGRAM_GROUP_ID="-100xxxxxxxxxx"
 #   1. Use full path to docker-compose (not 'docker compose')
 #   2. Prompt is passed via stdin (-i), no bind mount needed — temp file stays mode 600
 #   3. No -w flag — working_dir comes from docker-compose.yml
-PROVIDER_CMD_claude='/usr/local/lib/docker/cli-plugins/docker-compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -i claude sh -c '"'"'claude --dangerously-skip-permissions -p "$(cat)"'"'"' < {prompt_file}'
+PROVIDER_CMD_claude='/usr/local/lib/docker/cli-plugins/docker-compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -i claude sh -c '"'"'claude --dangerously-skip-permissions -p "$(cat)" ; chmod -R a+rw /memory/ 2>/dev/null'"'"' < {prompt_file}'
 
 # Paths (must be exported — provider runs in a bash -c subprocess)
 export AGENT_HOME="/share/CACHEDEV1_DATA/ai-server-agent"
@@ -219,28 +219,20 @@ Send a message in a Telegram topic. The agent should respond within seconds.
 
 ### 8. Set up cron
 
-QNAP uses `/etc/config/crontab` (not the standard `crontab -e`).
+Add entries to `/etc/config/crontab` using `su your_user` so the agent runs as the deployment user. This survives reboots reliably without timing issues.
 
-> **Note:** QNAP doesn't have `flock`. Use `mkdir` as a lock (atomic on Linux):
-
-```bash
-sudo vi /etc/config/crontab
-```
-
-Add this line:
-
-```
-*/30 * * * * mkdir /share/CACHEDEV1_DATA/ai-server-agent/data/heartbeat.lock 2>/dev/null && (export PATH=/share/CACHEDEV1_DATA/.local/bin:/share/CACHEDEV1_DATA/.qpkg/container-station/bin:/opt/bin:$PATH; cd /share/CACHEDEV1_DATA/ai-server-agent && ./start.sh --once >> logs/agent.log 2>&1; rmdir data/heartbeat.lock) || true
-```
-
-Apply:
+Replace `your_user` with the non-root user who owns the agent files (e.g. the user you SSH in as):
 
 ```bash
+sudo tee -a /etc/config/crontab << 'EOF'
+*/30 * * * * su your_user -c 'mkdir -p /share/CACHEDEV1_DATA/ai-server-agent/data && mkdir /share/CACHEDEV1_DATA/ai-server-agent/data/heartbeat.lock 2>/dev/null && (export PATH=/share/CACHEDEV1_DATA/.local/bin:/share/CACHEDEV1_DATA/.qpkg/container-station/bin:/opt/bin:$PATH; cd /share/CACHEDEV1_DATA/ai-server-agent && ./start.sh --once >> logs/agent.log 2>&1; rmdir data/heartbeat.lock) || true'
+EOF
+
 sudo crontab /etc/config/crontab
 sudo /etc/init.d/crond.sh restart
 ```
 
-> **Warning:** QTS firmware updates may reset `/etc/config/crontab`. After an update, verify the cron entry is still there.
+> **Why `su your_user`:** Docker container runs as the same uid as the deployment user. Running the shell as that user ensures both write the same uid to memory files, avoiding `Permission denied` errors.
 
 ## Troubleshooting
 
