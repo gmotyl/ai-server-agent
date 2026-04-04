@@ -58,6 +58,18 @@ fi
 trap "rmdir '${AGENT_HOME}/data/heartbeat.lock' 2>/dev/null || true" EXIT
 trap "exit 130" INT TERM
 
+# --- Flush stale Telegram updates ---
+# Skip any messages queued while agent was stopped, so we only process new ones.
+latest=$(curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates" \
+  -d "offset=-1" -d "timeout=0" | jq '.result[-1].update_id // 0')
+if [[ "$latest" -gt 0 ]]; then
+  new_offset=$((latest + 1))
+  tmp="${AGENT_HOME}/data/state.json.tmp"
+  jq --argjson v "$new_offset" '.last_update_id = $v' "${AGENT_HOME}/data/state.json" > "$tmp" \
+    && mv "$tmp" "${AGENT_HOME}/data/state.json"
+  echo "Flushed stale updates (offset → ${new_offset})"
+fi
+
 # --- Long polling config ---
 export POLL_TIMEOUT=30
 
