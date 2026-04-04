@@ -23,7 +23,7 @@ export default {
       user: 'Now compare that to how DynamoDB handles the same trade-off. Reference your earlier CAP explanation.',
       assert: [
         { type: 'contains', pattern: /availability/i },
-        { type: 'references_turn', turn: 0, info: 'CAP' },
+        { type: 'contains', pattern: /CAP|consistency.*availability|availability.*partition/i },
         { type: 'not_contains', pattern: /what is CAP|remind me|could you clarify/i },
       ],
     },

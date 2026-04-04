@@ -34,12 +34,13 @@ export default {
       ],
     },
     {
-      user: "Explain the TDD (Test-Driven Development) workflow. Include a diagram showing the TDD cycle and a pros/cons table. This should be a detailed response.",
+      user: "Explain the TDD (Test-Driven Development) workflow. Include a diagram showing the TDD cycle and a pros/cons table. This should be a detailed response. Use function we created as example",
       assert: [
         { type: "contains", pattern: /<summary>/ },
         { type: "contains", pattern: /<!DOCTYPE html>/ },
         { type: "contains", pattern: /<table[\s>]/ },
         { type: "contains", pattern: /<svg[\s>]|<img[\s>]|mermaid|diagram/i },
+        { type: "contains", pattern: /greet/ },
       ],
     },
   ],
