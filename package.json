@@ -1,0 +1,8 @@
+{
+  "name": "ai-server-agent",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "test": "bash test/test-message-reliability.sh && cd eval && pnpm run eval"
+  }
+}
