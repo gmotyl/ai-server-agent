@@ -53,8 +53,8 @@ if [[ -z "${TELEGRAM_BOT_TOKEN:-}" || -z "${TELEGRAM_GROUP_ID:-}" ]]; then
 fi
 
 # --- Kill stale instances ---
-# Find any existing start.sh or heartbeat.sh processes (excluding ourselves)
-stale_pids=$(ps aux | grep -E "(start\.sh|heartbeat\.sh)" | grep -v grep | awk '{print $2}' | grep -v "^$$\$" || true)
+# Use pgrep with specific path patterns to avoid killing unrelated processes
+stale_pids=$(pgrep -f "${AGENT_HOME}/bin/heartbeat.sh|${AGENT_HOME}/start.sh" | grep -v "^$$\$" || true)
 if [[ -n "$stale_pids" ]]; then
   echo "Killing stale agent processes: ${stale_pids//$'\n'/ }"
   echo "$stale_pids" | xargs kill -9 2>/dev/null || true
@@ -70,10 +70,11 @@ trap "exit 130" INT TERM
 # --- Flush stale Telegram updates ---
 # Skip any messages queued while agent was stopped, so we only process new ones.
 latest=$(curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates" \
-  -d "offset=-1" -d "timeout=0" | jq '.result[-1].update_id // 0')
-if [[ "$latest" -gt 0 ]]; then
+  -d "offset=-1" -d "timeout=0" | jq '.result[-1].update_id // empty')
+if [[ -n "$latest" ]]; then
   new_offset=$((latest + 1))
   tmp="${AGENT_HOME}/data/state.json.tmp"
+  [[ -f "${AGENT_HOME}/data/state.json" ]] || echo '{}' > "${AGENT_HOME}/data/state.json"
   jq --argjson v "$new_offset" '.last_update_id = $v' "${AGENT_HOME}/data/state.json" > "$tmp" \
     && mv "$tmp" "${AGENT_HOME}/data/state.json"
   echo "Flushed stale updates (offset → ${new_offset})"

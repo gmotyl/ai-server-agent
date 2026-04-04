@@ -10,8 +10,9 @@ response_is_html() {
 # Extract summary text from <summary> tags
 response_extract_summary() {
   local output="$1"
-  # Get text between first <summary> and </summary>
-  echo "$output" | sed -n 's/.*<summary>\(.*\)<\/summary>.*/\1/p' | head -1
+  # Get text between first <summary> and </summary> (multi-line safe)
+  local summary="${output#*<summary>}"
+  echo "${summary%%</summary>*}"
 }
 
 # Extract HTML document (from <!DOCTYPE html> onward)
@@ -29,6 +30,6 @@ response_save_html() {
   local beat_num
   beat_num=$(ls "$responses_dir"/*.html 2>/dev/null | wc -l | tr -d ' ')
   local html_file="${responses_dir}/beat-${beat_num}.html"
-  echo "$html_content" > "$html_file"
+  printf "%s" "$html_content" > "$html_file"
   echo "$html_file"
 }

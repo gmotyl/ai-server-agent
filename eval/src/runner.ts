@@ -134,22 +134,18 @@ async function runCase(evalCase: EvalCase): Promise<CaseResult> {
 
   } finally {
     if (evalCase.teardown) await evalCase.teardown(workdir)
-
-    const allPassed = turnResults.every((t) =>
-      t.assertions.every((a) => a.passed),
-    )
-
-    // Skip cleanup on failure so workdir can be inspected
-    if (allPassed) {
-      env.cleanup()
-    } else {
-      console.log(`  Workdir preserved for debugging: ${workdir}`)
-    }
   }
 
-  const allPassed = turnResults.every((t) =>
+  const allPassed = turnResults.length > 0 && turnResults.every((t) =>
     t.assertions.every((a) => a.passed),
   )
+
+  // Skip cleanup on failure (or empty runs) so workdir can be inspected
+  if (allPassed) {
+    env.cleanup()
+  } else {
+    console.log(`  Workdir preserved for debugging: ${workdir}`)
+  }
 
   return {
     caseName: evalCase.name,
