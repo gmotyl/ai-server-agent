@@ -50,21 +50,33 @@ telegram_send() {
   local length=${#text}
   local max_len=${MAX_MESSAGE_LENGTH:-4096}
 
-  if [[ $length -le $max_len ]]; then
-    telegram_api "sendMessage" \
+  local send_chunk
+  send_chunk() {
+    local chunk="$1"
+    local result
+    # Try with Markdown first
+    result=$(telegram_api "sendMessage" \
       -d "chat_id=${TELEGRAM_GROUP_ID}" \
       -d "message_thread_id=${topic_id}" \
-      --data-urlencode "text=${text}" \
-      -d "parse_mode=Markdown"
+      --data-urlencode "text=${chunk}" \
+      -d "parse_mode=Markdown")
+    # If Markdown parsing fails, retry as plain text
+    if echo "$result" | grep -q '"ok":false'; then
+      result=$(telegram_api "sendMessage" \
+        -d "chat_id=${TELEGRAM_GROUP_ID}" \
+        -d "message_thread_id=${topic_id}" \
+        --data-urlencode "text=${chunk}")
+    fi
+    echo "$result"
+  }
+
+  if [[ $length -le $max_len ]]; then
+    send_chunk "$text"
   else
     # Split into chunks
     while [[ -n "$text" ]]; do
       local chunk="${text:0:$max_len}"
-      telegram_api "sendMessage" \
-        -d "chat_id=${TELEGRAM_GROUP_ID}" \
-        -d "message_thread_id=${topic_id}" \
-        --data-urlencode "text=${chunk}" \
-        -d "parse_mode=Markdown"
+      send_chunk "$chunk"
       text="${text:$max_len}"
     done
   fi
