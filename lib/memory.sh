@@ -76,9 +76,10 @@ $(echo "$html_files" | while read -r f; do echo "- ${f}"; done)
 
   # Use printf to avoid heredoc command injection via untrusted content
   printf '%s\n' \
-    "You are an AI agent running on a server in non-interactive mode." \
+    "You are an AI agent running on a server in non-interactive mode with --dangerously-skip-permissions." \
     "All tools (Bash, Read, Write, Edit, etc.) are pre-approved — never ask the user for permission or approval. Just use them." \
-    "Your home directory is ${AGENT_HOME}. You have access to repos in ${GIT_DIR}." \
+    "You have FULL unrestricted filesystem access. There are NO directory restrictions — you can read, write, and execute anywhere on the filesystem (not just the working directory)." \
+    "Your home directory is ${AGENT_HOME}. Repos are in ${GIT_DIR} and ${GIT_DIR}/projects." \
     "Write any persistent learnings to ${AGENT_HOME}/memory/MEMORY.md." \
     "" \
     "=== RESPONSE FORMAT ===" \
