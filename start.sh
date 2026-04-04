@@ -52,6 +52,15 @@ if [[ -z "${TELEGRAM_BOT_TOKEN:-}" || -z "${TELEGRAM_GROUP_ID:-}" ]]; then
   exit 1
 fi
 
+# --- Kill stale instances ---
+# Find any existing start.sh or heartbeat.sh processes (excluding ourselves)
+stale_pids=$(ps aux | grep -E "(start\.sh|heartbeat\.sh)" | grep -v grep | awk '{print $2}' | grep -v "^$$\$" || true)
+if [[ -n "$stale_pids" ]]; then
+  echo "Killing stale agent processes: ${stale_pids//$'\n'/ }"
+  echo "$stale_pids" | xargs kill -9 2>/dev/null || true
+  sleep 1
+fi
+
 # --- Lock cleanup on exit ---
 # The cron wrapper creates data/heartbeat.lock before invoking this script.
 # Register a trap so the lock is always removed even if we crash or are killed.
