@@ -28,7 +28,11 @@ run_provider() {
   local prompt_file
   prompt_file=$(mktemp)
   echo "$prompt" > "$prompt_file"
+<<<<<<< Updated upstream
   chmod 644 "$prompt_file"
+=======
+  
+>>>>>>> Stashed changes
 
   # Replace placeholders with safe values (paths only, no user content)
   local cmd="${cmd_template}"
