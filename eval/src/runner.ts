@@ -86,6 +86,16 @@ function shellEscape(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`
 }
 
+// Extract summary from HTML response, or return full response for plain text
+function extractContextResponse(response: string): string {
+  const summaryMatch = response.match(/<summary>([\s\S]*?)<\/summary>/)
+  if (summaryMatch) {
+    return summaryMatch[1]
+  }
+  // Plain text — truncate to 1000 chars (matches production)
+  return response.slice(0, 1000)
+}
+
 // --- Run a single case ---
 async function runCase(evalCase: EvalCase): Promise<CaseResult> {
   const provider = args.provider ?? evalCase.provider ?? 'claude'
@@ -106,8 +116,8 @@ async function runCase(evalCase: EvalCase): Promise<CaseResult> {
       // Run the real provider
       const response = runProvider(fullPrompt, provider, workdir)
 
-      // Accumulate context (just like heartbeat.sh does — truncate to 500 chars)
-      appendContext(env.topicId, turn.user, response.slice(0, 500), provider)
+      // Accumulate context (just like heartbeat.sh does — summary or truncated plain text)
+      appendContext(env.topicId, turn.user, extractContextResponse(response), provider)
 
       // Evaluate assertions
       const assertions = (turn.assert ?? []).map((a) =>
