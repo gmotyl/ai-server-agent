@@ -52,11 +52,33 @@ if [[ -z "${TELEGRAM_BOT_TOKEN:-}" || -z "${TELEGRAM_GROUP_ID:-}" ]]; then
   exit 1
 fi
 
+# --- Kill stale instances ---
+# Use pgrep with specific path patterns to avoid killing unrelated processes
+stale_pids=$(pgrep -f "${AGENT_HOME}/bin/heartbeat.sh|${AGENT_HOME}/start.sh" | grep -v "^$$\$" || true)
+if [[ -n "$stale_pids" ]]; then
+  echo "Killing stale agent processes: ${stale_pids//$'\n'/ }"
+  echo "$stale_pids" | xargs kill -9 2>/dev/null || true
+  sleep 1
+fi
+
 # --- Lock cleanup on exit ---
 # The cron wrapper creates data/heartbeat.lock before invoking this script.
 # Register a trap so the lock is always removed even if we crash or are killed.
 trap "rmdir '${AGENT_HOME}/data/heartbeat.lock' 2>/dev/null || true" EXIT
 trap "exit 130" INT TERM
+
+# --- Flush stale Telegram updates ---
+# Skip any messages queued while agent was stopped, so we only process new ones.
+latest=$(curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates" \
+  -d "offset=-1" -d "timeout=0" | jq '.result[-1].update_id // empty')
+if [[ -n "$latest" ]]; then
+  new_offset=$((latest + 1))
+  tmp="${AGENT_HOME}/data/state.json.tmp"
+  [[ -f "${AGENT_HOME}/data/state.json" ]] || echo '{}' > "${AGENT_HOME}/data/state.json"
+  jq --argjson v "$new_offset" '.last_update_id = $v' "${AGENT_HOME}/data/state.json" > "$tmp" \
+    && mv "$tmp" "${AGENT_HOME}/data/state.json"
+  echo "Flushed stale updates (offset → ${new_offset})"
+fi
 
 # --- Long polling config ---
 export POLL_TIMEOUT=30

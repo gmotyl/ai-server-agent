@@ -7,6 +7,7 @@ source "${SCRIPT_DIR}/../lib/utils.sh"
 source "${SCRIPT_DIR}/../lib/telegram.sh"
 source "${SCRIPT_DIR}/../lib/memory.sh"
 source "${SCRIPT_DIR}/../lib/provider.sh"
+source "${SCRIPT_DIR}/../lib/response.sh"
 load_config
 
 # --- 1. Scheduled tasks ---
@@ -45,8 +46,17 @@ for ((i=0; i<due_count; i++)); do
   telegram_typing_stop
 
   # Post result and update memory
-  telegram_send "$topic_id" "$output"
-  append_topic_context "$topic_id" "[scheduled] $prompt" "$output" "$provider"
+  if response_is_html "$output"; then
+    summary=$(response_extract_summary "$output")
+    html=$(response_extract_html "$output")
+    html_file=$(response_save_html "$topic_id" "$html")
+    telegram_send "$topic_id" "$summary"
+    telegram_send_document "$topic_id" "$html_file"
+    append_topic_context "$topic_id" "[scheduled] $prompt" "$summary" "$provider"
+  else
+    telegram_send "$topic_id" "$output"
+    append_topic_context "$topic_id" "[scheduled] $prompt" "${output:0:1000}" "$provider"
+  fi
   log_message "$topic_id" "schedule" "$prompt"
   log_message "$topic_id" "$provider" "$output"
 
@@ -143,11 +153,18 @@ for ((i=0; i<update_count; i++)); do
     output="(no output from ${provider})"
   fi
 
-  # Post response
-  telegram_send "$topic_id" "$output"
-
-  # Update memory
-  append_topic_context "$topic_id" "$msg_text" "${output:0:500}" "$provider"
+  # Post response — HTML with attachment or plain text
+  if response_is_html "$output"; then
+    summary=$(response_extract_summary "$output")
+    html=$(response_extract_html "$output")
+    html_file=$(response_save_html "$topic_id" "$html")
+    telegram_send "$topic_id" "$summary"
+    telegram_send_document "$topic_id" "$html_file"
+    append_topic_context "$topic_id" "$msg_text" "$summary" "$provider"
+  else
+    telegram_send "$topic_id" "$output"
+    append_topic_context "$topic_id" "$msg_text" "${output:0:1000}" "$provider"
+  fi
   log_message "$topic_id" "$provider" "$output"
 
   log "INFO" "Response posted to topic ${topic_id}"
