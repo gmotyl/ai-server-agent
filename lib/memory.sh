@@ -55,20 +55,51 @@ build_prompt() {
   local user_message="$2"
   local global_mem
   local topic_ctx
+  local saved_responses=""
   global_mem=$(read_global_memory)
   topic_ctx=$(read_topic_context "$topic_id")
+
+  # List saved HTML responses if any exist
+  local responses_dir="${AGENT_HOME}/memory/topics/${topic_id}/responses"
+  if [[ -d "$responses_dir" ]]; then
+    local html_files
+    html_files=$(ls "$responses_dir"/*.html 2>/dev/null)
+    if [[ -n "$html_files" ]]; then
+      saved_responses="
+=== SAVED RESPONSES ===
+The following detailed HTML responses from earlier turns are saved on disk.
+You can read these files for detailed context from earlier turns:
+$(echo "$html_files" | while read -r f; do echo "- ${f}"; done)
+"
+    fi
+  fi
 
   cat <<EOF
 You are an AI agent running on a server.
 Your home directory is ${AGENT_HOME}. You have access to repos in ${GIT_DIR}.
 Write any persistent learnings to ${AGENT_HOME}/memory/MEMORY.md.
 
+=== RESPONSE FORMAT ===
+For simple responses (confirmations, short answers), reply in plain text. Keep under 4000 characters.
+
+For complex responses (explanations, analysis, code walkthroughs, comparisons), produce a self-contained HTML document:
+- Start with <summary>A concise summary of key facts, decisions, and what was done (500-1000 chars)</summary>
+- Follow with the full HTML document starting with <!DOCTYPE html>
+- The HTML must be self-contained (inline CSS), mobile-friendly (responsive layout)
+- Use native HTML tables, SVG diagrams, code blocks with syntax highlighting where they help
+- Prefer visual structure over walls of text
+
+The summary is what appears in the chat and is stored as context for future turns. Make it information-dense — include specific names, paths, values, decisions. The HTML file is saved and attached for detailed reference.
+
+=== CONVERSATION CONTINUITY ===
+The TASK CONTEXT section below contains prior exchanges in this conversation. Reference specific details from earlier turns — file names, decisions, values. Never re-ask questions that were already answered.
+
 === PERSISTENT MEMORY ===
 ${global_mem}
 
 === TASK CONTEXT ===
 ${topic_ctx}
-
+${saved_responses}
 === NEW MESSAGE ===
 ${user_message}
 EOF
