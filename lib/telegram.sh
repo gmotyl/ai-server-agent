@@ -86,3 +86,22 @@ telegram_filter_topic_messages() {
   local topic_id="$2"
   echo "$updates" | jq -c "[.result[] | select(.message.message_thread_id == ${topic_id})]"
 }
+
+# Send a document (file) to a topic
+telegram_send_document() {
+  local topic_id="$1"
+  local file_path="$2"
+  local caption="${3:-}"
+  if [[ -n "$caption" ]]; then
+    telegram_api "sendDocument" \
+      -F "chat_id=${TELEGRAM_GROUP_ID}" \
+      -F "message_thread_id=${topic_id}" \
+      -F "document=@${file_path}" \
+      -F "caption=${caption}"
+  else
+    telegram_api "sendDocument" \
+      -F "chat_id=${TELEGRAM_GROUP_ID}" \
+      -F "message_thread_id=${topic_id}" \
+      -F "document=@${file_path}"
+  fi
+}
