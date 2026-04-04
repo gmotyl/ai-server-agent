@@ -1,5 +1,5 @@
-import { execSync } from 'node:child_process'
-import { readdirSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { readdirSync, writeFileSync, unlinkSync } from 'node:fs'
 import { join, basename } from 'node:path'
 import { parseArgs } from 'node:util'
 import { evaluateAssertion } from './assertions.js'
@@ -42,30 +42,44 @@ async function loadCases(): Promise<EvalCase[]> {
 }
 
 function matchGlob(name: string, pattern: string): boolean {
-  const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$')
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')
+  const regex = new RegExp('^' + escaped + '$')
   return regex.test(name)
 }
 
 // --- Run provider ---
+// Mirrors production: writes prompt to temp file, calls run_provider via bash.
+// Uses execFileSync to avoid double-escaping issues.
 function runProvider(
   prompt: string,
   provider: string,
   workdir: string,
 ): string {
-  // Shell out to the real provider via provider.sh's run_provider
-  const script = `
-    source lib/utils.sh
-    source lib/provider.sh
-    load_config
-    run_provider ${shellEscape(provider)} ${shellEscape(prompt)} ${shellEscape(workdir)}
-  `
-  const result = execSync(`bash -c ${shellEscape(script)}`, {
-    cwd: REPO_ROOT,
-    encoding: 'utf-8',
-    timeout: 300_000,  // 5 min per turn
-    maxBuffer: 10 * 1024 * 1024,
-  })
-  return result
+  // Write prompt to temp file (same as production provider.sh does internally,
+  // but we need it here to avoid passing multi-KB prompts through bash args)
+  const promptFile = join(REPO_ROOT, `data/.eval-prompt-${Date.now()}.tmp`)
+  writeFileSync(promptFile, prompt, { mode: 0o600 })
+
+  try {
+    const script = `
+      source lib/utils.sh
+      source lib/provider.sh
+      load_config
+      run_provider ${shellEscape(provider)} "$(cat ${shellEscape(promptFile)})" ${shellEscape(workdir)}
+    `
+    const result = execFileSync('bash', ['-c', script], {
+      cwd: REPO_ROOT,
+      encoding: 'utf-8',
+      timeout: 300_000,  // 5 min per turn
+      maxBuffer: 10 * 1024 * 1024,
+    })
+    return result
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return `[PROVIDER ERROR] ${provider} failed: ${msg}`
+  } finally {
+    try { unlinkSync(promptFile) } catch { /* already cleaned up */ }
+  }
 }
 
 function shellEscape(s: string): string {
@@ -92,8 +106,8 @@ async function runCase(evalCase: EvalCase): Promise<CaseResult> {
       // Run the real provider
       const response = runProvider(fullPrompt, provider, workdir)
 
-      // Accumulate context (just like heartbeat.sh does)
-      appendContext(env.topicId, turn.user, response, provider)
+      // Accumulate context (just like heartbeat.sh does — truncate to 500 chars)
+      appendContext(env.topicId, turn.user, response.slice(0, 500), provider)
 
       // Evaluate assertions
       const assertions = (turn.assert ?? []).map((a) =>
@@ -108,9 +122,19 @@ async function runCase(evalCase: EvalCase): Promise<CaseResult> {
       })
     }
 
-    if (evalCase.teardown) await evalCase.teardown(workdir)
   } finally {
-    env.cleanup()
+    if (evalCase.teardown) await evalCase.teardown(workdir)
+
+    const allPassed = turnResults.every((t) =>
+      t.assertions.every((a) => a.passed),
+    )
+
+    // Skip cleanup on failure so workdir can be inspected
+    if (allPassed) {
+      env.cleanup()
+    } else {
+      console.log(`  Workdir preserved for debugging: ${workdir}`)
+    }
   }
 
   const allPassed = turnResults.every((t) =>

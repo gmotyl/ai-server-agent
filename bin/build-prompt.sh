@@ -7,4 +7,5 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "${SCRIPT_DIR}/../lib/utils.sh"
 source "${SCRIPT_DIR}/../lib/memory.sh"
 load_config
+ensure_topic_dir "$1" > /dev/null
 build_prompt "$1" "$2"
