@@ -1,10 +1,18 @@
-FROM docker-claude
+FROM node:22-slim
 
-# Install Qwen (as agent user, already present from base image)
+RUN apt-get update && apt-get install -y git python3 curl && rm -rf /var/lib/apt/lists/*
+RUN npm install -g pnpm
+
+RUN useradd -m -s /bin/bash agent
+RUN mkdir -p /home/agent/.local/state/claude && chown -R agent:agent /home/agent/.local
+
 USER agent
+
+RUN curl -fsSL https://claude.ai/install.sh | bash
+
+ENV PATH="/home/agent/.local/bin:${PATH}"
+
 WORKDIR /home/agent
 
-ENV PATH="/home/agent/.npm-global/bin:${PATH}"
-
-RUN mkdir -p /home/agent/.npm-global && npm config set prefix '/home/agent/.npm-global'
+# Install Qwen
 RUN npm install -g @qwen-code/qwen-code@latest
