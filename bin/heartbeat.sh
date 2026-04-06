@@ -16,7 +16,10 @@ due_count=$(echo "$due_tasks" | jq 'length')
 
 for ((i=0; i<due_count; i++)); do
   task=$(echo "$due_tasks" | jq -c ".[$i]")
-  eval "$(echo "$task" | jq -r --arg dp "$DEFAULT_PROVIDER" '@sh "
+  # Resolve default provider: persisted default > config default
+  effective_default=$(read_state '.default_provider')
+  [[ -z "$effective_default" || "$effective_default" == "null" ]] && effective_default="$DEFAULT_PROVIDER"
+  eval "$(echo "$task" | jq -r --arg dp "$effective_default" '@sh "
     name=\(.name)
     provider=\(.provider // $dp)
     workdir=\(.workdir // "/git")
@@ -108,17 +111,20 @@ for ((i=0; i<update_count; i++)); do
     /provider\ *)
       new_provider="${msg_text#/provider }"
       write_state ".topic_providers.\"${topic_id}\"" "${new_provider}"
-      telegram_send "$topic_id" "Provider set to: *${new_provider}*"
+      write_state ".default_provider" "${new_provider}"
+      telegram_send "$topic_id" "Provider set to: *${new_provider}* (default for new topics)"
       continue
       ;;
     /claude)
       write_state ".topic_providers.\"${topic_id}\"" "claude"
-      telegram_send "$topic_id" "Provider set to: *claude*"
+      write_state ".default_provider" "claude"
+      telegram_send "$topic_id" "Provider set to: *claude* (default for new topics)"
       continue
       ;;
     /qwen)
       write_state ".topic_providers.\"${topic_id}\"" "qwen"
-      telegram_send "$topic_id" "Provider set to: *qwen*"
+      write_state ".default_provider" "qwen"
+      telegram_send "$topic_id" "Provider set to: *qwen* (default for new topics)"
       continue
       ;;
     /close)
@@ -134,9 +140,14 @@ for ((i=0; i<update_count; i++)); do
   esac
 
   # --- 5. Normal message: dispatch to AI provider ---
-  # Determine provider (topic override or default)
+  # Determine provider (topic override > persisted default > config default)
   provider=$(read_state ".topic_providers.\"${topic_id}\"")
-  [[ -z "$provider" || "$provider" == "null" ]] && provider="$DEFAULT_PROVIDER"
+  if [[ -z "$provider" || "$provider" == "null" ]]; then
+    provider=$(read_state '.default_provider')
+  fi
+  if [[ -z "$provider" || "$provider" == "null" ]]; then
+    provider="$DEFAULT_PROVIDER"
+  fi
 
   # Prepare memory
   ensure_topic_dir "$topic_id" > /dev/null
