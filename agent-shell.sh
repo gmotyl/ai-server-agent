@@ -13,4 +13,4 @@ source "${AGENT_HOME}/config/agent.conf"
 
 /usr/local/lib/docker/cli-plugins/docker-compose \
   -f "${AGENT_HOME}/docker/docker-compose.yml" \
-  run --rm -it --entrypoint /bin/bash claude
+  run --rm -it --entrypoint /bin/bash ai-agent
