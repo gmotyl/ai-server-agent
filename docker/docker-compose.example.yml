@@ -1,17 +1,20 @@
 services:
-  claude:
-    image: ${IMAGE_NAME:-claude-news-claude-news}
+  ai-agent:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: ${IMAGE_NAME:-ai-server-agent}
     entrypoint: []
     volumes:
       - ${GIT_DIR:-/your/git/dir}:/git
       - ${AGENT_HOME:-/your/agent/home}:/git/ai-server-agent
-      - claude-home:/home/claude
-      - /your/home/.ssh:/home/claude/.ssh:ro
+      - agent-home:/home/agent
+      - /your/home/.ssh:/home/agent/.ssh:ro
       - ${AGENT_HOME:-/your/agent/home}/memory:/memory
     working_dir: /git/projects
     network_mode: bridge
 
 volumes:
-  claude-home:
+  agent-home:
     external: true
-    name: claude-news_claude-home
+    name: ai-server-agent-home
