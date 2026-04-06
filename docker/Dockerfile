@@ -11,7 +11,9 @@ RUN useradd -m -s /bin/bash agent
 USER agent
 WORKDIR /home/agent
 
-ENV PATH="/home/agent/.local/bin:${PATH}"
+# Configure npm for user-level global installs
+RUN mkdir -p .npm-global && npm config set prefix '/home/agent/.npm-global'
+ENV PATH="/home/agent/.npm-global/bin:/home/agent/.local/bin:${PATH}"
 
 RUN mkdir -p .local/state/claude
 
