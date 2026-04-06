@@ -108,7 +108,17 @@ for ((i=0; i<update_count; i++)); do
     /provider\ *)
       new_provider="${msg_text#/provider }"
       write_state ".topic_providers.\"${topic_id}\"" "${new_provider}"
-      telegram_send "$topic_id" "Provider set to: ${new_provider}"
+      telegram_send "$topic_id" "Provider set to: *${new_provider}*"
+      continue
+      ;;
+    /claude)
+      write_state ".topic_providers.\"${topic_id}\"" "claude"
+      telegram_send "$topic_id" "Provider set to: *claude*"
+      continue
+      ;;
+    /qwen)
+      write_state ".topic_providers.\"${topic_id}\"" "qwen"
+      telegram_send "$topic_id" "Provider set to: *qwen*"
       continue
       ;;
     /close)
