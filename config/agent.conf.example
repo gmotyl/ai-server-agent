@@ -23,10 +23,8 @@ DEFAULT_PROVIDER="claude"
 # NOTE: prompt is passed via stdin (-i) so no bind mount needed.
 # The temp file stays mode 600 (owner-only); Docker reads it through the pipe.
 # NOTE: Do NOT use -w {workdir} — let docker-compose.yml's working_dir take effect.
-# NOTE: chmod -R a+rw /memory/ restores write access after Docker (which may run as root)
-#       writes files that the host user (non-root) would otherwise be unable to modify.
-PROVIDER_CMD_claude="docker compose -f \${AGENT_HOME}/docker/docker-compose.yml run --rm -i ai-agent sh -c 'claude --dangerously-skip-permissions -p \"\$(cat)\" ; chmod -R a+rw /memory/ 2>/dev/null' < {prompt_file}"
-PROVIDER_CMD_qwen="docker compose -f \${AGENT_HOME}/docker/docker-compose.yml run --rm -i ai-agent sh -c 'qwen -y -p \"\$(cat)\" ; chmod -R a+rw /memory/ 2>/dev/null' < {prompt_file}"
+PROVIDER_CMD_claude='"${AGENT_HOME}/bin/docker-provider.sh" claude {prompt_file}'
+PROVIDER_CMD_qwen='"${AGENT_HOME}/bin/docker-provider.sh" qwen {prompt_file}'
 #
 # Local (for testing without Docker — runs CLI directly on host):
 # PROVIDER_CMD_claude='cd {workdir} && claude --dangerously-skip-permissions -p "$(cat {prompt_file})"'
@@ -36,8 +34,10 @@ PROVIDER_CMD_qwen="docker compose -f \${AGENT_HOME}/docker/docker-compose.yml ru
 # IMPORTANT: use 'export' so these are visible to provider subprocesses
 # AGENT_HOME is auto-detected from install location, override if needed
 # export AGENT_HOME="/share/CACHEDEV1_DATA/ai-server-agent"
-# GIT_DIR defaults to ${AGENT_HOME}/git
-# export GIT_DIR="/share/CACHEDEV1_DATA/ai-server-agent/git"
+# GIT_DIR is the host path where repos live
+# export GIT_DIR="/share/CACHEDEV1_DATA/git"
+# CONTAINER_GIT_DIR is where that host path is mounted inside Docker
+# export CONTAINER_GIT_DIR="/git"
 
 # --- Telegram Message Limits ---
 MAX_MESSAGE_LENGTH=4096

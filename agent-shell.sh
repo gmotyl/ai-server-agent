@@ -10,18 +10,12 @@ if [[ ! -f "${AGENT_HOME}/config/agent.conf" ]]; then
 fi
 source "${AGENT_HOME}/config/agent.conf"
 
-# Determine docker path
-DOCKER="${DOCKER:-docker}"
-command -v "$DOCKER" &>/dev/null || DOCKER="/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker"
-
-# Run interactive shell directly — no compose overhead
-"$DOCKER" run --rm -it \
-  -v "${GIT_DIR}:/git" \
-  -v "${AGENT_HOME}:/git/ai-server-agent" \
-  -v docker_agent-home:/home/agent \
-  -v ~/.ssh:/home/agent/.ssh:ro \
-  -v "${AGENT_HOME}/memory:/memory" \
-  --network bridge \
-  --workdir /git \
-  --entrypoint /bin/bash \
-  ai-server-agent
+if docker compose version >/dev/null 2>&1; then
+  docker compose \
+    -f "${AGENT_HOME}/docker/docker-compose.yml" \
+    run --rm -it --entrypoint /bin/bash ai-agent
+else
+  /usr/local/lib/docker/cli-plugins/docker-compose \
+    -f "${AGENT_HOME}/docker/docker-compose.yml" \
+    run --rm -it --entrypoint /bin/bash ai-agent
+fi

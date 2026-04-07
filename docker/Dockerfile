@@ -1,11 +1,20 @@
 FROM node:22-slim
 
-RUN apt-get update && apt-get install -y git python3 curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    bash curl git jq python3 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install Claude (as root, goes to /usr/local/bin)
-RUN npm install -g @anthropic-ai/claude-code
+RUN npm install -g pnpm
 
-# Install Qwen
-RUN npm install -g @qwen-code/qwen-code@latest
+RUN useradd -m -s /bin/bash agent
 
+USER agent
 WORKDIR /home/agent
+
+RUN mkdir -p /home/agent/.local/state/claude /home/agent/.npm-global
+RUN npm config set prefix /home/agent/.npm-global
+
+ENV PATH="/home/agent/.npm-global/bin:/home/agent/.local/bin:${PATH}"
+
+RUN curl -fsSL https://claude.ai/install.sh | bash
+RUN npm install -g @qwen-code/qwen-code@latest

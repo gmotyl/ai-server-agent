@@ -158,7 +158,7 @@ for ((i=0; i<update_count; i++)); do
 
   # Determine workdir (topic override or default)
   workdir=$(read_state ".topic_workdirs.\"${topic_id}\"")
-  [[ -z "$workdir" || "$workdir" == "null" ]] && workdir="${GIT_DIR}"
+  [[ -z "$workdir" || "$workdir" == "null" ]] && workdir="${CONTAINER_GIT_DIR:-${GIT_DIR}}"
 
   # Start persistent typing indicator
   telegram_typing_start "$topic_id"

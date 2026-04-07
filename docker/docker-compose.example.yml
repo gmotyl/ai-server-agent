@@ -8,12 +8,12 @@ services:
     volumes:
       - ${GIT_DIR:-/your/git/dir}:/git
       - ${AGENT_HOME:-/your/agent/home}:/git/ai-server-agent
-      - docker_agent-home:/home/agent
+      - agent-home:/home/agent
       - /your/home/.ssh:/home/agent/.ssh:ro
       - ${AGENT_HOME:-/your/agent/home}/memory:/memory
     working_dir: /git
     network_mode: bridge
 
 volumes:
-  docker_agent-home:
-    driver: local
+  agent-home:
+    name: ai-server-agent-home
