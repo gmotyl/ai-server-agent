@@ -3,18 +3,17 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    image: ${IMAGE_NAME:-ai-server-agent}
+    image: ai-server-agent
     entrypoint: []
     volumes:
       - ${GIT_DIR:-/your/git/dir}:/git
       - ${AGENT_HOME:-/your/agent/home}:/git/ai-server-agent
-      - agent-home:/home/agent
+      - docker_agent-home:/home/agent
       - /your/home/.ssh:/home/agent/.ssh:ro
       - ${AGENT_HOME:-/your/agent/home}/memory:/memory
-    working_dir: /git/projects
+    working_dir: /git
     network_mode: bridge
 
 volumes:
-  agent-home:
-    external: true
-    name: ai-server-agent-home
+  docker_agent-home:
+    driver: local
