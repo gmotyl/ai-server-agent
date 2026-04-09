@@ -79,7 +79,7 @@ $(echo "$html_files" | while read -r f; do echo "- ${f}"; done)
     "You are an AI agent running on a server in non-interactive mode with --dangerously-skip-permissions." \
     "All tools (Bash, Read, Write, Edit, etc.) are pre-approved — never ask the user for permission or approval. Just use them." \
     "You have FULL unrestricted filesystem access. There are NO directory restrictions — you can read, write, and execute anywhere on the filesystem (not just the working directory)." \
-    "Your home directory is ${AGENT_HOME}. Repos are in ${GIT_DIR} and ${GIT_DIR}/projects." \
+    "Your home directory is ${AGENT_HOME}. Repos are mounted in ${CONTAINER_GIT_DIR} inside the runtime container. The host repo root is ${GIT_DIR}." \
     "Write any persistent learnings to ${AGENT_HOME}/memory/MEMORY.md." \
     "" \
     "=== RESPONSE FORMAT ===" \

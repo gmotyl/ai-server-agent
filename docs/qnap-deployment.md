@@ -101,42 +101,42 @@ ln -s /share/CACHEDEV1_DATA/ai-server-agent ~/ai-server-agent
 
 ### 3. Build the Docker image
 
-You need a Docker image with Claude Code (or your preferred AI CLI) installed. Build one:
+The repository ships a single runtime image with Claude Code and Qwen installed for a generic non-root `agent` user. Build it with:
 
 ```bash
 cd /share/CACHEDEV1_DATA/ai-server-agent
-/usr/local/lib/docker/cli-plugins/docker-compose -f docker/docker-compose.yml build claude
+/usr/local/lib/docker/cli-plugins/docker-compose -f docker/docker-compose.yml build ai-agent
 ```
 
-This builds from `docker/claude/Dockerfile` — a node:22-slim image with Claude Code installed.
+This builds from `docker/Dockerfile`.
 
-> **Tip:** If you already have a working Claude Docker image (e.g., from another project), you can reuse it. Update `docker/docker-compose.yml` to reference that image and set `entrypoint: []` to override any default entrypoint:
+> **Tip:** If you already have a working agent runtime image (e.g., from another project), you can reuse it. Update `docker/docker-compose.yml` to reference that image and set `entrypoint: []` to override any default entrypoint:
 > ```yaml
 > services:
->   claude:
->     image: your-existing-claude-image
+>   ai-agent:
+>     image: your-existing-agent-image
 >     entrypoint: []
 >     volumes:
 >       - /share/homes/your_user/git:/git   # host ~/git → container /git
->       - claude-home:/home/claude
->       - ~/.ssh:/home/claude/.ssh:ro
+>       - agent-home:/home/agent
+>       - ~/.ssh:/home/agent/.ssh:ro
 >     working_dir: /git
 >
 > volumes:
->   claude-home:
->     external: true
+>   agent-home:
 >     name: your-existing-volume   # reuse credentials
 > ```
 
-### 4. Authenticate Claude Code
+### 4. Authenticate providers inside the runtime shell
 
-The Claude CLI needs authentication. Run it once interactively:
+Open the same runtime shell the agent uses:
 
 ```bash
-docker run -it -v claude-agent-home:/home/agent your-claude-image claude
+/usr/local/lib/docker/cli-plugins/docker-compose -f docker/docker-compose.yml \
+  run --rm -it --entrypoint /bin/bash ai-agent
 ```
 
-Follow the login flow. Credentials are persisted in the Docker volume.
+Inside the shell, run `claude` and complete login. If you also want to prepare Qwen, run `qwen` there too. Credentials are persisted in the `agent-home` Docker volume.
 
 If reusing an existing volume that's already authenticated, skip this step.
 
@@ -156,18 +156,16 @@ export PATH="/share/CACHEDEV1_DATA/.local/bin:/share/CACHEDEV1_DATA/.qpkg/contai
 TELEGRAM_BOT_TOKEN="your-token-here"
 TELEGRAM_GROUP_ID="-100xxxxxxxxxx"
 
-# Provider command — QNAP-specific:
-#   1. Use full path to docker-compose (not 'docker compose')
-#   2. Prompt is passed via stdin (-i), no bind mount needed — temp file stays mode 600
-#   3. No -w flag — working_dir comes from docker-compose.yml
-PROVIDER_CMD_claude='/usr/local/lib/docker/cli-plugins/docker-compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -i claude sh -c '"'"'claude --dangerously-skip-permissions -p "$(cat)" ; chmod -R a+rw /memory/ 2>/dev/null'"'"' < {prompt_file}'
+# Provider commands — QNAP-specific:
+#   Wrapper script auto-selects `docker compose` or the QNAP plugin path
+#   Prompt is passed via stdin (-i), no bind mount needed — temp file stays mode 600
+PROVIDER_CMD_claude='"${AGENT_HOME}/bin/docker-provider.sh" claude {prompt_file}'
+PROVIDER_CMD_qwen='"${AGENT_HOME}/bin/docker-provider.sh" qwen {prompt_file}'
 
 # Paths (must be exported — provider runs in a bash -c subprocess)
 export AGENT_HOME="/share/CACHEDEV1_DATA/ai-server-agent"
-
-# GIT_DIR: path to your git repos *inside the container* (not the host path).
-# The host path is set in docker-compose.yml volumes (e.g. ~/git:/git).
-export GIT_DIR="/git"
+export GIT_DIR="/share/CACHEDEV1_DATA/git"
+export CONTAINER_GIT_DIR="/git"
 ```
 
 #### Git repos volume mapping
@@ -180,13 +178,13 @@ The agent mounts your local `~/git` directory into the container as `/git`. Any 
 volumes:
   - /share/homes/your_user/git:/git   # host ~/git → container /git
   - ${AGENT_HOME}:/git/ai-server-agent
-  - claude-home:/home/claude
-  - ~/.ssh:/home/claude/.ssh:ro
+  - agent-home:/home/agent
+  - ~/.ssh:/home/agent/.ssh:ro
   - ${AGENT_HOME}/memory:/memory
 working_dir: /git   # where the agent starts; change to e.g. /git/projects if preferred
 ```
 
-Set `GIT_DIR="/git"` in `agent.conf` — this tells Claude where to find repos inside the container, and matches the volume mount above.
+Set `GIT_DIR` to the host repo root and `CONTAINER_GIT_DIR="/git"` to the in-container mount path.
 
 #### PROVIDER_CMD gotchas on QNAP
 

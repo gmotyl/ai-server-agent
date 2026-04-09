@@ -2,7 +2,7 @@
 
 A provider-agnostic AI agent that runs on any Docker host (NAS, VPS, etc.), communicates via Telegram, and executes tasks autonomously.
 
-Supports Claude Code, Gemini CLI, Codex, or any CLI tool with auto-approve mode.
+The bundled Docker runtime ships with Claude Code and Qwen, and runs both under a generic non-root `agent` user so interactive shell auth and Telegram execution use the same credentials.
 
 ## Quick Start (Local)
 
@@ -69,7 +69,8 @@ Copy `config/agent.conf.example` to `config/agent.conf`:
 | `DEFAULT_PROVIDER` | AI provider name | `claude` |
 | `HEARTBEAT_INTERVAL_MIN` | Cron mode listen duration (minutes) | `30` |
 | `HEARTBEAT_TIMEOUT_SEC` | Max provider execution time | `3600` |
-| `GIT_DIR` | Working directory for repos | `$AGENT_HOME/git` |
+| `GIT_DIR` | Host path where repos live | `$AGENT_HOME/git` |
+| `CONTAINER_GIT_DIR` | Repo mount path inside Docker | same as `GIT_DIR` |
 | `PROVIDER_CMD_<name>` | Command template per provider | — |
 
 ### Adding Providers
@@ -81,10 +82,10 @@ Each provider needs a command template in `config/agent.conf`:
 PROVIDER_CMD_claude='cd {workdir} && claude --dangerously-skip-permissions -p "$(cat {prompt_file})"'
 
 # Docker (for server deployment):
-PROVIDER_CMD_claude='docker compose -f ${AGENT_HOME}/docker/docker-compose.yml run --rm -v {prompt_file}:/tmp/prompt:ro -w {workdir} claude claude -p "$(cat /tmp/prompt)"'
+PROVIDER_CMD_claude='"${AGENT_HOME}/bin/docker-provider.sh" claude {prompt_file}'
 ```
 
-Dockerfiles live in `docker/<provider>/`.
+The unified runtime image lives in `docker/Dockerfile`.
 
 ## Scheduled Tasks
 
@@ -111,6 +112,8 @@ Send these in any Telegram topic:
 |---------|-------------|
 | `/clone <url>` | Clone a repo into the git directory |
 | `/provider <name>` | Switch AI provider for this topic |
+| `/claude` | Switch this topic and new topics to Claude |
+| `/qwen` | Switch this topic and new topics to Qwen |
 | `/close` | Deactivate this topic |
 | `/status` | List open topics and current provider |
 

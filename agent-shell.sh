@@ -1,6 +1,5 @@
 #!/bin/bash
 # agent-shell.sh — interactive shell inside the agent's Docker container
-# Same image, volumes, and credentials as the agent uses
 set -euo pipefail
 
 AGENT_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,6 +10,12 @@ if [[ ! -f "${AGENT_HOME}/config/agent.conf" ]]; then
 fi
 source "${AGENT_HOME}/config/agent.conf"
 
-/usr/local/lib/docker/cli-plugins/docker-compose \
-  -f "${AGENT_HOME}/docker/docker-compose.yml" \
-  run --rm -it --entrypoint /bin/bash claude
+if docker compose version >/dev/null 2>&1; then
+  docker compose \
+    -f "${AGENT_HOME}/docker/docker-compose.yml" \
+    run --rm -it --entrypoint /bin/bash ai-agent
+else
+  /usr/local/lib/docker/cli-plugins/docker-compose \
+    -f "${AGENT_HOME}/docker/docker-compose.yml" \
+    run --rm -it --entrypoint /bin/bash ai-agent
+fi

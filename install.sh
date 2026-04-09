@@ -23,7 +23,7 @@ if [[ ! -f "${AGENT_HOME}/docker/docker-compose.yml" ]]; then
   cp "${AGENT_HOME}/docker/docker-compose.example.yml" "${AGENT_HOME}/docker/docker-compose.yml"
   echo ""
   echo "Created docker/docker-compose.yml from template."
-  echo "Edit it with your host-specific paths (GIT_DIR, AGENT_HOME, SSH path), then re-run this script."
+  echo "Edit it with your host-specific paths (GIT_DIR, CONTAINER_GIT_DIR, AGENT_HOME, SSH path), then re-run this script."
   exit 0
 fi
 
@@ -39,10 +39,14 @@ if [[ -z "${TELEGRAM_GROUP_ID:-}" ]]; then
   exit 1
 fi
 
-# 3. Build default provider Docker image
+# 3. Build runtime Docker image
 echo ""
-echo "Building Docker image for provider: ${DEFAULT_PROVIDER}"
-docker compose -f "${AGENT_HOME}/docker/docker-compose.yml" build "${DEFAULT_PROVIDER}"
+echo "Building Docker image for service: ai-agent"
+if docker compose version >/dev/null 2>&1; then
+  docker compose -f "${AGENT_HOME}/docker/docker-compose.yml" build ai-agent
+else
+  /usr/local/lib/docker/cli-plugins/docker-compose -f "${AGENT_HOME}/docker/docker-compose.yml" build ai-agent
+fi
 
 # 4. Initialize state files (if not exist)
 if [[ ! -f "${AGENT_HOME}/data/state.json" ]]; then
