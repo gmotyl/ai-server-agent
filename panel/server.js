@@ -199,7 +199,12 @@ function apiTopics(req, res) {
   sendJSON(res, 200, topics);
 }
 
+function validateTopicId(id) {
+  return /^\d+$/.test(id);
+}
+
 function apiTopicMessages(req, res, params) {
+  if (!validateTopicId(params.id)) return sendJSON(res, 400, { error: 'Invalid topic ID' });
   const msgsFile = path.join(TOPICS_DIR, params.id, 'messages.jsonl');
   if (!fs.existsSync(msgsFile)) return sendJSON(res, 200, []);
   const lines = fs.readFileSync(msgsFile, 'utf8').trim().split('\n').filter(Boolean);
@@ -210,12 +215,14 @@ function apiTopicMessages(req, res, params) {
 }
 
 function apiTopicContext(req, res, params) {
+  if (!validateTopicId(params.id)) return sendJSON(res, 400, { error: 'Invalid topic ID' });
   const ctxFile = path.join(TOPICS_DIR, params.id, 'context.md');
   if (!fs.existsSync(ctxFile)) return sendJSON(res, 200, { content: '' });
   sendJSON(res, 200, { content: fs.readFileSync(ctxFile, 'utf8') });
 }
 
 function apiDeleteTopic(req, res, params) {
+  if (!validateTopicId(params.id)) return sendJSON(res, 400, { error: 'Invalid topic ID' });
   const state = readJSON(STATE_FILE);
   const id = params.id;
 
@@ -243,6 +250,7 @@ function apiDeleteTopic(req, res, params) {
 }
 
 function apiCloseTopic(req, res, params) {
+  if (!validateTopicId(params.id)) return sendJSON(res, 400, { error: 'Invalid topic ID' });
   const state = readJSON(STATE_FILE);
   if (!state.topics) state.topics = {};
   if (!state.topics[params.id]) state.topics[params.id] = {};
@@ -268,8 +276,14 @@ async function apiCreateSchedule(req, res) {
   const body = await readBody(req);
   const schedules = readJSON(SCHEDULES_FILE);
 
-  if (!body.name || !body.cron || !body.prompt) {
-    return sendJSON(res, 400, { error: 'name, cron, and prompt are required' });
+  if (!body.name || !/^[a-zA-Z0-9_-]+$/.test(body.name) || !body.cron || !body.prompt) {
+    return sendJSON(res, 400, { error: 'Invalid name (alphanumeric, -, _ only), cron, or prompt required' });
+  }
+  if (body.provider && !getProviders().includes(body.provider)) {
+    return sendJSON(res, 400, { error: 'Invalid provider' });
+  }
+  if (body.workdir && !body.workdir.startsWith('/git')) {
+    return sendJSON(res, 400, { error: 'Workdir must start with /git' });
   }
 
   if (schedules.find(s => s.name === body.name)) {
@@ -296,6 +310,12 @@ async function apiUpdateSchedule(req, res, params) {
   if (idx === -1) return send404(res);
 
   const s = schedules[idx];
+  if (body.provider && !getProviders().includes(body.provider)) {
+    return sendJSON(res, 400, { error: 'Invalid provider' });
+  }
+  if (body.workdir && !body.workdir.startsWith('/git')) {
+    return sendJSON(res, 400, { error: 'Workdir must start with /git' });
+  }
   if (body.cron !== undefined) s.cron = body.cron;
   if (body.prompt !== undefined) s.prompt = body.prompt;
   if (body.provider !== undefined) s.provider = body.provider;
@@ -360,6 +380,9 @@ async function apiUpdateSettings(req, res) {
 
   // Update default_provider in state.json
   if (body.defaultProvider) {
+    if (!getProviders().includes(body.defaultProvider)) {
+      return sendJSON(res, 400, { error: 'Invalid provider' });
+    }
     const state = readJSON(STATE_FILE);
     state.default_provider = body.defaultProvider;
     writeJSON(STATE_FILE, state);
@@ -371,8 +394,10 @@ async function apiUpdateSettings(req, res) {
     if (interval > 0) {
       let confContent = fs.readFileSync(CONFIG_FILE, 'utf8');
       confContent = confContent.replace(
-        /^HEARTBEAT_INTERVAL_MIN=.*/m,
-        `HEARTBEAT_INTERVAL_MIN=${interval}`
+        /^(?:export\s+)?HEARTBEAT_INTERVAL_MIN=.*/m,
+        (match) => match.startsWith('export')
+          ? `export HEARTBEAT_INTERVAL_MIN=${interval}`
+          : `HEARTBEAT_INTERVAL_MIN=${interval}`
       );
       fs.writeFileSync(CONFIG_FILE, confContent);
     }
