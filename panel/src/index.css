@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: 'Syne', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+  --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+
+  --color-bg: #0c0a09;
+  --color-surface: #141210;
+  --color-surface-2: #1c1917;
+  --color-surface-3: #231f1d;
+  --color-brd: #2a2522;
+  --color-brd-2: #3d3632;
+  --color-txt: #e8e2d9;
+  --color-txt-2: #b5aea4;
+  --color-txt-3: #7c7670;
+  --color-lime: #c4f82a;
+  --color-lime-dim: rgba(196,248,42,0.12);
+  --color-lime-glow: rgba(196,248,42,0.25);
+  --color-cyan: #22d3ee;
+  --color-cyan-dim: rgba(34,211,238,0.10);
+  --color-amber: #fbbf24;
+  --color-amber-dim: rgba(251,191,36,0.10);
+  --color-danger: #ef4444;
+  --color-danger-dim: rgba(239,68,68,0.08);
+  --color-emerald: #34d399;
+
+  --animate-fade-up: fadeUp 0.4s cubic-bezier(0.22,1,0.36,1) both;
+  --animate-pulse-dot: pulseDot 2s ease-in-out infinite;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: var(--color-lime-dim);
+  color: var(--color-lime);
+}
