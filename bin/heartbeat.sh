@@ -15,57 +15,8 @@ due_tasks=$("${SCRIPT_DIR}/schedule-check.sh")
 due_count=$(echo "$due_tasks" | jq 'length')
 
 for ((i=0; i<due_count; i++)); do
-  task=$(echo "$due_tasks" | jq -c ".[$i]")
-  # Resolve default provider: persisted default > config default
-  effective_default=$(read_state '.default_provider')
-  [[ -z "$effective_default" || "$effective_default" == "null" ]] && effective_default="$DEFAULT_PROVIDER"
-  eval "$(echo "$task" | jq -r --arg dp "$effective_default" '@sh "
-    name=\(.name)
-    provider=\(.provider // $dp)
-    workdir=\(.workdir // "/git")
-    prompt=\(.prompt)
-    topic_name=\(.topic_name // ("Scheduled: " + .name))
-  "')"
-
-  log "INFO" "Running scheduled task: ${name}"
-
-  # Get or create topic for this schedule
-  topic_id=$(read_state ".schedule_topics.\"${name}\"")
-  if [[ -z "$topic_id" || "$topic_id" == "null" ]]; then
-    topic_id=$(telegram_create_topic "$topic_name")
-    write_state_raw ".schedule_topics.\"${name}\"" "$topic_id"
-    log "INFO" "Created topic ${topic_id} for schedule '${name}'"
-  fi
-
-  telegram_send "$topic_id" "Running scheduled task: *${name}*"
-
-  # Build prompt with memory
-  full_prompt=$(build_prompt "$topic_id" "$prompt")
-  ensure_topic_dir "$topic_id" > /dev/null
-
-  # Run provider with typing indicator
-  telegram_typing_start "$topic_id"
-  output=$(run_provider "$provider" "$full_prompt" "$workdir") || true
-  telegram_typing_stop
-
-  # Post result and update memory
-  if response_is_html "$output"; then
-    summary=$(response_extract_summary "$output")
-    html=$(response_extract_html "$output")
-    html_file=$(response_save_html "$topic_id" "$html")
-    telegram_send "$topic_id" "$summary"
-    telegram_send_document "$topic_id" "$html_file"
-    append_topic_context "$topic_id" "[scheduled] $prompt" "$summary" "$provider"
-  else
-    telegram_send "$topic_id" "$output"
-    append_topic_context "$topic_id" "[scheduled] $prompt" "${output:0:1000}" "$provider"
-  fi
-  log_message "$topic_id" "schedule" "$prompt"
-  log_message "$topic_id" "$provider" "$output"
-
-  # Mark as run
-  current_window=$(date '+%Y-%m-%d-%H-%M')
-  write_state ".schedules_last_run.\"${name}\"" "${current_window}"
+  name=$(echo "$due_tasks" | jq -r ".[$i].name")
+  "${SCRIPT_DIR}/schedule-run.sh" "$name" || true
 done
 
 # --- 2. Poll Telegram ---
@@ -135,6 +86,70 @@ for ((i=0; i<update_count; i++)); do
     /status)
       status_msg="Open topics: $(read_state '.topics | keys | length')\nDefault provider: ${DEFAULT_PROVIDER}"
       telegram_send "$topic_id" "$status_msg"
+      continue
+      ;;
+    "/schedule list")
+      sched_file="${AGENT_HOME}/data/schedules.json"
+      if [[ ! -f "$sched_file" ]] || [[ $(jq 'length' "$sched_file") -eq 0 ]]; then
+        telegram_send "$topic_id" "No scheduled tasks configured."
+      else
+        sched_msg="*Scheduled Tasks:*"$'\n'
+        while IFS= read -r sj; do
+          sn=$(echo "$sj" | jq -r '.name')
+          sc=$(echo "$sj" | jq -r '.cron')
+          sp=$(echo "$sj" | jq -r '.provider // "default"')
+          last_run=$(read_state ".schedules_last_run.\"${sn}\"")
+          [[ -z "$last_run" || "$last_run" == "null" ]] && last_run="never"
+          sched_msg+="• *${sn}* \`${sc}\` (${sp}) — last: ${last_run}"$'\n'
+        done < <(jq -c '.[]' "$sched_file")
+        telegram_send "$topic_id" "$sched_msg"
+      fi
+      continue
+      ;;
+    /schedule\ show\ *)
+      sched_name="${msg_text#/schedule show }"
+      sched_file="${AGENT_HOME}/data/schedules.json"
+      sched_detail=$(jq -c --arg n "$sched_name" '.[] | select(.name == $n)' "$sched_file" 2>/dev/null)
+      if [[ -z "$sched_detail" ]]; then
+        telegram_send "$topic_id" "Schedule '${sched_name}' not found."
+      else
+        eval "$(echo "$sched_detail" | jq -r '@sh "
+          sd_name=\(.name)
+          sd_cron=\(.cron)
+          sd_prompt=\(.prompt)
+          sd_provider=\(.provider // "default")
+          sd_workdir=\(.workdir // "/git")
+        "')"
+        last_run=$(read_state ".schedules_last_run.\"${sd_name}\"")
+        [[ -z "$last_run" || "$last_run" == "null" ]] && last_run="never"
+        detail_msg="*${sd_name}*"$'\n'
+        detail_msg+="Cron: \`${sd_cron}\`"$'\n'
+        detail_msg+="Provider: ${sd_provider}"$'\n'
+        detail_msg+="Workdir: \`${sd_workdir}\`"$'\n'
+        detail_msg+="Prompt: ${sd_prompt}"$'\n'
+        detail_msg+="Last run: ${last_run}"
+        telegram_send "$topic_id" "$detail_msg"
+      fi
+      continue
+      ;;
+    /schedule\ run\ *)
+      sched_name="${msg_text#/schedule run }"
+      sched_file="${AGENT_HOME}/data/schedules.json"
+      if ! jq -e --arg n "$sched_name" '.[] | select(.name == $n)' "$sched_file" > /dev/null 2>&1; then
+        telegram_send "$topic_id" "Schedule '${sched_name}' not found."
+      else
+        telegram_send "$topic_id" "Running *${sched_name}*..."
+        "${SCRIPT_DIR}/schedule-run.sh" "$sched_name" &
+      fi
+      continue
+      ;;
+    "/schedule help"|"/schedule")
+      help_msg="*Scheduler Commands:*"$'\n'
+      help_msg+="/schedule list — show all scheduled tasks"$'\n'
+      help_msg+="/schedule show <name> — show task details"$'\n'
+      help_msg+="/schedule run <name> — run task now"$'\n'
+      help_msg+="/schedule help — this message"
+      telegram_send "$topic_id" "$help_msg"
       continue
       ;;
   esac

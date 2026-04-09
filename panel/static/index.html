@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-server-agent</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<!-- Login -->
+<div id="login" class="login-wrap">
+  <div class="login-box">
+    <h1>ai-server-agent</h1>
+    <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Admin Panel</p>
+    <div id="login-error" class="login-error">Invalid token</div>
+    <input type="password" id="token-input" placeholder="Enter admin token" autofocus>
+    <button class="btn btn-blue" style="width:100%;padding:0.5rem;font-size:0.9rem" onclick="doLogin()">Login</button>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app" class="app">
+  <header>
+    <h1>ai-server-agent</h1>
+    <div class="header-right">
+      <span id="header-provider" class="provider-badge" style="color:var(--green);border-color:rgba(63,185,80,0.3)"></span>
+      <button class="btn btn-ghost" style="font-size:0.75rem" onclick="doLogout()">Logout</button>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="topics">Topics</button>
+    <button class="tab" data-tab="schedules">Schedules</button>
+    <button class="tab" data-tab="settings">Settings</button>
+  </div>
+
+  <main>
+    <!-- Topics Tab -->
+    <div id="tab-topics" class="tab-content active">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Topic</th>
+              <th>Provider</th>
+              <th class="hide-mobile">Messages</th>
+              <th>Last Activity</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="topics-body"></tbody>
+        </table>
+      </div>
+      <div class="mt-2">
+        <button class="btn btn-danger" onclick="deleteClosedTopics()">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M11 1.75V3h2.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75ZM6.5 1.75V3h3V1.75a.25.25 0 0 0-.25-.25h-2.5a.25.25 0 0 0-.25.25ZM3.613 5.5l.806 8.87A1.75 1.75 0 0 0 6.16 16h3.68a1.75 1.75 0 0 0 1.741-1.63L12.387 5.5Z"/></svg>
+          Delete all closed topics
+        </button>
+      </div>
+    </div>
+
+    <!-- Schedules Tab -->
+    <div id="tab-schedules" class="tab-content">
+      <div id="heartbeat-note" class="note-box"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Schedule</th>
+              <th>Provider</th>
+              <th class="hide-mobile">Workdir</th>
+              <th class="hide-mobile">Prompt</th>
+              <th class="hide-mobile">Last Run</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="schedules-body"></tbody>
+        </table>
+      </div>
+      <div id="schedule-form-area"></div>
+      <div class="mt-2">
+        <button class="btn btn-green" onclick="showAddSchedule()">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"/></svg>
+          Add Schedule
+        </button>
+      </div>
+    </div>
+
+    <!-- Settings Tab -->
+    <div id="tab-settings" class="tab-content">
+      <div id="settings-area"></div>
+    </div>
+  </main>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>

@@ -52,6 +52,14 @@ if [[ -z "${TELEGRAM_BOT_TOKEN:-}" || -z "${TELEGRAM_GROUP_ID:-}" ]]; then
   exit 1
 fi
 
+# --- Start admin panel ---
+PANEL_PID=""
+if [[ -n "${ADMIN_TOKEN:-}" ]]; then
+  AGENT_HOME="${AGENT_HOME}" node "${AGENT_HOME}/panel/server.js" &
+  PANEL_PID=$!
+  echo "Admin panel: http://0.0.0.0:${PANEL_PORT:-3000} (PID ${PANEL_PID})"
+fi
+
 # --- Kill stale instances ---
 # Use pgrep with specific path patterns to avoid killing unrelated processes
 stale_pids=$(pgrep -f "${AGENT_HOME}/bin/heartbeat.sh|${AGENT_HOME}/start.sh" | grep -v "^$$\$" || true)
@@ -64,7 +72,11 @@ fi
 # --- Lock cleanup on exit ---
 # The cron wrapper creates data/heartbeat.lock before invoking this script.
 # Register a trap so the lock is always removed even if we crash or are killed.
-trap "rmdir '${AGENT_HOME}/data/heartbeat.lock' 2>/dev/null || true" EXIT
+cleanup() {
+  [[ -n "${PANEL_PID:-}" ]] && kill "$PANEL_PID" 2>/dev/null || true
+  rmdir "${AGENT_HOME}/data/heartbeat.lock" 2>/dev/null || true
+}
+trap cleanup EXIT
 trap "exit 130" INT TERM
 
 # --- Flush stale Telegram updates ---
