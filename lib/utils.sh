@@ -39,7 +39,7 @@ read_state() {
 write_state() {
   local key="$1"
   local value="$2"
-  local tmp="${AGENT_HOME}/data/state.json.tmp"
+  local tmp="${AGENT_HOME}/data/state.json.tmp.$$"
   jq --arg v "$value" "$key = \$v" "${AGENT_HOME}/data/state.json" > "$tmp" && mv "$tmp" "${AGENT_HOME}/data/state.json"
 }
 
@@ -47,6 +47,6 @@ write_state() {
 write_state_raw() {
   local key="$1"
   local value="$2"
-  local tmp="${AGENT_HOME}/data/state.json.tmp"
+  local tmp="${AGENT_HOME}/data/state.json.tmp.$$"
   jq --argjson v "$value" "$key = \$v" "${AGENT_HOME}/data/state.json" > "$tmp" && mv "$tmp" "${AGENT_HOME}/data/state.json"
 }

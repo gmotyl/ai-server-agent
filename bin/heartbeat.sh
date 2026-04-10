@@ -24,9 +24,10 @@ last_offset=$(read_state '.last_update_id')
 last_offset=${last_offset:-0}
 
 updates=$(telegram_poll "$last_offset")
-update_count=$(echo "$updates" | jq '.result | length')
+update_count=$(echo "$updates" | jq '.result | length' 2>/dev/null)
 
-if [[ "$update_count" -eq 0 ]]; then
+# Guard: if poll failed or returned no messages, exit cleanly
+if [[ -z "$update_count" || "$update_count" == "null" || "$update_count" -eq 0 ]] 2>/dev/null; then
   exit 0
 fi
 
