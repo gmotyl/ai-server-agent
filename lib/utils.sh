@@ -7,6 +7,14 @@ export AGENT_HOME
 
 STATE_FILE="${AGENT_HOME}/data/state.json"
 STATE_LOCKDIR="${AGENT_HOME}/data/state.lock"
+STATE_DEFAULT='{"last_update_id":0,"topics":{},"topic_providers":{},"topic_workdirs":{},"schedule_topics":{},"schedules_last_run":{}}'
+
+# Ensure state.json exists and is valid JSON
+_ensure_state() {
+  if [[ ! -s "$STATE_FILE" ]] || ! jq empty "$STATE_FILE" 2>/dev/null; then
+    echo "$STATE_DEFAULT" | jq . > "$STATE_FILE"
+  fi
+}
 
 # Load config
 load_config() {
@@ -54,6 +62,7 @@ _state_unlock() {
 read_state() {
   local key="$1"
   _state_lock
+  _ensure_state
   local val
   val=$(jq -r "$key" "$STATE_FILE" 2>/dev/null || echo "")
   _state_unlock
@@ -65,8 +74,13 @@ write_state() {
   local key="$1"
   local value="$2"
   _state_lock
+  _ensure_state
   local tmp="${STATE_FILE}.tmp.$$"
-  jq --arg v "$value" "$key = \$v" "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+  if jq --arg v "$value" "$key = \$v" "$STATE_FILE" > "$tmp" 2>/dev/null; then
+    mv "$tmp" "$STATE_FILE"
+  else
+    rm -f "$tmp"
+  fi
   _state_unlock
 }
 
@@ -75,7 +89,12 @@ write_state_raw() {
   local key="$1"
   local value="$2"
   _state_lock
+  _ensure_state
   local tmp="${STATE_FILE}.tmp.$$"
-  jq --argjson v "$value" "$key = \$v" "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+  if jq --argjson v "$value" "$key = \$v" "$STATE_FILE" > "$tmp" 2>/dev/null; then
+    mv "$tmp" "$STATE_FILE"
+  else
+    rm -f "$tmp"
+  fi
   _state_unlock
 }
