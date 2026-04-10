@@ -5,7 +5,8 @@
 AGENT_HOME="${AGENT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 export AGENT_HOME
 
-STATE_LOCK="${AGENT_HOME}/data/state.lock"
+STATE_FILE="${AGENT_HOME}/data/state.json"
+STATE_LOCKDIR="${AGENT_HOME}/data/state.lock"
 
 # Load config
 load_config() {
@@ -31,33 +32,50 @@ log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $*"
 }
 
-# Read JSON field from state.json (locked to prevent reading mid-write)
-read_state() {
-  local key="$1"
-  (
-    flock -s 200
-    jq -r "$key" "${AGENT_HOME}/data/state.json" 2>/dev/null || echo ""
-  ) 200>"$STATE_LOCK"
+# Acquire exclusive lock (mkdir is atomic on all platforms)
+_state_lock() {
+  local attempts=0
+  while ! mkdir "$STATE_LOCKDIR" 2>/dev/null; do
+    attempts=$((attempts + 1))
+    if (( attempts > 50 )); then
+      # Stale lock — remove and retry
+      rm -rf "$STATE_LOCKDIR"
+      continue
+    fi
+    sleep 0.1
+  done
 }
 
-# Write JSON field to state.json (string value, exclusive lock)
+_state_unlock() {
+  rmdir "$STATE_LOCKDIR" 2>/dev/null || true
+}
+
+# Read JSON field from state.json
+read_state() {
+  local key="$1"
+  _state_lock
+  local val
+  val=$(jq -r "$key" "$STATE_FILE" 2>/dev/null || echo "")
+  _state_unlock
+  echo "$val"
+}
+
+# Write JSON field to state.json (string value)
 write_state() {
   local key="$1"
   local value="$2"
-  (
-    flock -x 200
-    local tmp="${AGENT_HOME}/data/state.json.tmp.$$"
-    jq --arg v "$value" "$key = \$v" "${AGENT_HOME}/data/state.json" > "$tmp" && mv "$tmp" "${AGENT_HOME}/data/state.json"
-  ) 200>"$STATE_LOCK"
+  _state_lock
+  local tmp="${STATE_FILE}.tmp.$$"
+  jq --arg v "$value" "$key = \$v" "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+  _state_unlock
 }
 
-# Write JSON field to state.json (raw/numeric value, exclusive lock)
+# Write JSON field to state.json (raw/numeric value)
 write_state_raw() {
   local key="$1"
   local value="$2"
-  (
-    flock -x 200
-    local tmp="${AGENT_HOME}/data/state.json.tmp.$$"
-    jq --argjson v "$value" "$key = \$v" "${AGENT_HOME}/data/state.json" > "$tmp" && mv "$tmp" "${AGENT_HOME}/data/state.json"
-  ) 200>"$STATE_LOCK"
+  _state_lock
+  local tmp="${STATE_FILE}.tmp.$$"
+  jq --argjson v "$value" "$key = \$v" "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+  _state_unlock
 }
