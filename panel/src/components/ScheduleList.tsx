@@ -22,6 +22,7 @@ export function ScheduleList() {
 
   useEffect(() => { load() }, [load])
 
+
   const run = async (name: string) => {
     await api<unknown>('POST', `/schedules/${encodeURIComponent(name)}/run`)
     showToast(`▶ Running '${name}'`)
@@ -40,7 +41,6 @@ export function ScheduleList() {
     load()
   }
 
-  const interval = status?.heartbeatInterval ?? 30
 
   return (
     <section>
@@ -52,10 +52,6 @@ export function ScheduleList() {
         </button>
       </div>
 
-      <div className="flex items-center gap-2 px-3 py-2 bg-amber-dim border border-amber/12 rounded-lg text-[0.78rem] text-amber mb-4">
-        <span>⚡</span>
-        <span>Schedules execute at heartbeat boundaries. Current interval: <strong>{interval} min</strong></span>
-      </div>
 
       {loading ? (
         <div className="text-center py-12 text-txt-3 font-mono text-sm">Loading...</div>

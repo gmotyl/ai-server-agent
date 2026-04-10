@@ -28,7 +28,6 @@ export interface Status {
   defaultProvider: string
   topicCount: number
   scheduleCount: number
-  heartbeatInterval: number
   pollTimeout: number
   providers: string[]
 }

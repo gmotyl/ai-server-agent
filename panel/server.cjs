@@ -392,7 +392,6 @@ function apiStatus(req, res) {
       try { return fs.readdirSync(TOPICS_DIR).filter(d => /^\d+$/.test(d)).length; } catch { return 0; }
     })(),
     scheduleCount: schedules.length,
-    heartbeatInterval: parseInt(config.HEARTBEAT_INTERVAL_MIN || '30', 10),
     pollTimeout: parseInt(config.POLL_TIMEOUT || '55', 10),
     providers: getProviders(),
   });
@@ -411,20 +410,6 @@ async function apiUpdateSettings(req, res) {
     writeJSON(STATE_FILE, state);
   }
 
-  // Update heartbeat interval in config file
-  if (body.heartbeatInterval) {
-    const interval = parseInt(body.heartbeatInterval, 10);
-    if (interval > 0) {
-      let confContent = fs.readFileSync(CONFIG_FILE, 'utf8');
-      confContent = confContent.replace(
-        /^(?:export\s+)?HEARTBEAT_INTERVAL_MIN=.*/m,
-        (match) => match.startsWith('export')
-          ? `export HEARTBEAT_INTERVAL_MIN=${interval}`
-          : `HEARTBEAT_INTERVAL_MIN=${interval}`
-      );
-      fs.writeFileSync(CONFIG_FILE, confContent);
-    }
-  }
 
   sendJSON(res, 200, { ok: true });
 }

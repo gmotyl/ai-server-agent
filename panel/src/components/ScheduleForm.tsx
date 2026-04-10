@@ -62,13 +62,12 @@ export function ScheduleForm({ schedule, onDone, onCancel }: Props) {
     }
   }
 
-  // Build minute options aligned to heartbeat interval
-  const hbInterval = status?.heartbeatInterval ?? 30
-  const minSteps: number[] = []
-  for (let m = 0; m < 60; m += hbInterval) minSteps.push(m)
-  // Include current value if editing a schedule with a non-aligned minute
-  if (!minSteps.includes(minute)) minSteps.push(minute)
-  minSteps.sort((a, b) => a - b)
+  // All minutes available — schedule-check.sh catches tasks even if due during poll gap
+  const minSteps = Array.from({ length: 12 }, (_, i) => i * 5)
+  if (!minSteps.includes(minute)) {
+    minSteps.push(minute)
+    minSteps.sort((a, b) => a - b)
+  }
 
   return (
     <div className="bg-surface border border-brd rounded-[14px] p-5 mt-4 animate-fade-up">

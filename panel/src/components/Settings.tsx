@@ -3,18 +3,15 @@ import { api } from '../api'
 import { useStore } from '../store'
 import { showToast } from './Toast'
 
-const INTERVALS = [5, 10, 15, 30, 60]
-
 export function Settings() {
   const { status, providers, refreshStatus } = useStore()
   const [defaultProvider, setDefaultProvider] = useState(status?.defaultProvider ?? '')
-  const [heartbeatInterval, setHeartbeatInterval] = useState(status?.heartbeatInterval ?? 30)
   const [saving, setSaving] = useState(false)
 
   const save = async () => {
     setSaving(true)
     try {
-      await api<unknown>('PUT', '/settings', { defaultProvider, heartbeatInterval })
+      await api<unknown>('PUT', '/settings', { defaultProvider })
       showToast('Settings saved')
       await refreshStatus()
     } catch (e) {
@@ -46,24 +43,6 @@ export function Settings() {
               onChange={e => setDefaultProvider(e.target.value)}
             >
               {providers.map(p => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </div>
-
-          <div className="border-t border-brd" />
-
-          <div className="flex items-center justify-between py-2.5">
-            <div>
-              <div className="font-medium text-[0.88rem]">Heartbeat Interval</div>
-              <div className="text-[0.75rem] text-txt-3 mt-0.5">
-                How often the agent polls Telegram and runs due schedules
-              </div>
-            </div>
-            <select
-              className="form-select"
-              value={heartbeatInterval}
-              onChange={e => setHeartbeatInterval(Number(e.target.value))}
-            >
-              {INTERVALS.map(i => <option key={i} value={i}>{i} min</option>)}
             </select>
           </div>
         </div>
