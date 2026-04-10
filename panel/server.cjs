@@ -15,7 +15,7 @@ const CONFIG_FILE = path.join(AGENT_HOME, 'config', 'agent.conf');
 const STATE_FILE = path.join(AGENT_HOME, 'data', 'state.json');
 const SCHEDULES_FILE = path.join(AGENT_HOME, 'data', 'schedules.json');
 const TOPICS_DIR = path.join(AGENT_HOME, 'memory', 'topics');
-const STATIC_DIR = path.join(__dirname, 'static');
+const STATIC_DIR = path.join(__dirname, 'dist');
 
 function loadConfig() {
   const config = {};
@@ -87,6 +87,9 @@ const MIME = {
   '.json': 'application/json',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
 };
 
 function sendJSON(res, status, data) {

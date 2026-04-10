@@ -55,7 +55,7 @@ fi
 # --- Start admin panel ---
 PANEL_PID=""
 if [[ -n "${ADMIN_TOKEN:-}" ]]; then
-  AGENT_HOME="${AGENT_HOME}" node "${AGENT_HOME}/panel/server.js" &
+  AGENT_HOME="${AGENT_HOME}" node "${AGENT_HOME}/panel/server.cjs" &
   PANEL_PID=$!
   echo "Admin panel: http://0.0.0.0:${PANEL_PORT:-3000} (PID ${PANEL_PID})"
 fi
