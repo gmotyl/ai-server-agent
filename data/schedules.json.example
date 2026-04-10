@@ -1,0 +1,10 @@
+[
+  {
+    "name": "example-news",
+    "cron": "0 8 * * *",
+    "prompt": "generate-news all",
+    "provider": "qwen",
+    "workdir": "/git/example-project",
+    "topic_name": "Scheduled: Daily News"
+  }
+]

@@ -48,9 +48,9 @@ run_provider() {
   fi
 
   if [[ -n "$timeout_cmd" ]]; then
-    output=$("$timeout_cmd" "${HEARTBEAT_TIMEOUT_SEC}" bash -c "$cmd" 2>&1)
+    output=$("$timeout_cmd" "${HEARTBEAT_TIMEOUT_SEC}" bash -c "$cmd" < /dev/null 2>&1)
   else
-    output=$(bash -c "$cmd" 2>&1)
+    output=$(bash -c "$cmd" < /dev/null 2>&1)
   fi
   exit_code=$?
 

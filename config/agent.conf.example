@@ -39,5 +39,10 @@ PROVIDER_CMD_qwen='"${AGENT_HOME}/bin/docker-provider.sh" qwen {prompt_file}'
 # CONTAINER_GIT_DIR is where that host path is mounted inside Docker
 # export CONTAINER_GIT_DIR="/git"
 
+# --- Admin Panel ---
+# Set a token to enable the web admin panel (leave empty to disable)
+ADMIN_TOKEN=""
+PANEL_PORT=3000
+
 # --- Telegram Message Limits ---
 MAX_MESSAGE_LENGTH=4096

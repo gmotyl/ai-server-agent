@@ -1,9 +1,16 @@
 # Runtime state
 config/agent.conf
+config/agent.conf.bak
+data/state.lock
 data/
 memory/
 logs/
 git/
+
+# Panel build
+panel/node_modules/
+panel/dist/
+panel/tsconfig.tsbuildinfo
 
 # OS
 .DS_Store

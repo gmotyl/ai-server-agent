@@ -21,6 +21,15 @@ NOW_MON=$((10#$(date '+%m')))
 # Day of week: GNU date %u = 1-7 (Mon-Sun), macOS date %u also works on modern macOS
 NOW_DOW=$(date '+%u')
 
+# Previous minute — catch tasks due during Telegram poll gap (up to 55s)
+if (( NOW_MIN > 0 )); then
+  PREV_MIN=$((NOW_MIN - 1))
+  PREV_HOUR=$NOW_HOUR
+else
+  PREV_MIN=59
+  PREV_HOUR=$(( (NOW_HOUR + 23) % 24 ))
+fi
+
 # Check if a cron field matches current value
 # Supports: *, specific number, comma-separated, */step
 cron_field_matches() {
@@ -65,10 +74,28 @@ while IFS= read -r task_json; do
   cron_expr=$(echo "$task_json" | jq -r '.cron')
   name=$(echo "$task_json" | jq -r '.name')
 
+  # Check current minute AND previous minute (covers poll gap up to 55s)
+  # schedules_last_run dedup prevents double execution
+  is_due=false
   if cron_matches_now "$cron_expr"; then
-    last_run=$(read_state ".schedules_last_run.\"${name}\"")
+    is_due=true
+  else
+    # Check previous minute with same dom/mon/dow
+    read -r c_min c_hour c_dom c_mon c_dow <<< "$cron_expr"
+    if cron_field_matches "$c_min" "$PREV_MIN" \
+      && cron_field_matches "$c_hour" "$PREV_HOUR" \
+      && cron_field_matches "$c_dom" "$NOW_DOM" \
+      && cron_field_matches "$c_mon" "$NOW_MON" \
+      && cron_field_matches "$c_dow" "$NOW_DOW"; then
+      is_due=true
+    fi
+  fi
 
-    if [[ "$last_run" != "$current_window" ]]; then
+  if $is_due; then
+    last_run=$(read_state ".schedules_last_run.\"${name}\"")
+    prev_window=$(printf '%s-%02d-%02d' "$(date '+%Y-%m-%d')" "$PREV_HOUR" "$PREV_MIN")
+
+    if [[ "$last_run" != "$current_window" && "$last_run" != "$prev_window" ]]; then
       due_tasks_parts+=("$task_json")
       log "INFO" "Schedule '${name}' is due"
     else

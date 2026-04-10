@@ -12,6 +12,8 @@ services:
       - /your/home/.ssh:/home/agent/.ssh:ro
       - ${AGENT_HOME:-/your/agent/home}/memory:/memory
     working_dir: /git
+    ports:
+      - "${PANEL_PORT:-3000}:${PANEL_PORT:-3000}"
     network_mode: bridge
 
 volumes:

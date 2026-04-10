@@ -1,0 +1,139 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: 'Syne', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+  --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+
+  --color-bg: #0c0a09;
+  --color-surface: #141210;
+  --color-surface-2: #1c1917;
+  --color-surface-3: #231f1d;
+  --color-brd: #2a2522;
+  --color-brd-2: #3d3632;
+  --color-txt: #e8e2d9;
+  --color-txt-2: #b5aea4;
+  --color-txt-3: #7c7670;
+  --color-lime: #c4f82a;
+  --color-lime-dim: rgba(196,248,42,0.12);
+  --color-lime-glow: rgba(196,248,42,0.25);
+  --color-cyan: #22d3ee;
+  --color-cyan-dim: rgba(34,211,238,0.10);
+  --color-amber: #fbbf24;
+  --color-amber-dim: rgba(251,191,36,0.10);
+  --color-danger: #ef4444;
+  --color-danger-dim: rgba(239,68,68,0.08);
+  --color-emerald: #34d399;
+
+  --animate-fade-up: fadeUp 0.4s cubic-bezier(0.22,1,0.36,1) both;
+  --animate-pulse-dot: pulseDot 2s ease-in-out infinite;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: var(--color-lime-dim);
+  color: var(--color-lime);
+}
+
+/* Reusable component classes */
+.icon-btn {
+  @apply inline-flex items-center justify-center w-8 h-8 rounded-lg border border-brd
+    bg-transparent text-txt-3 cursor-pointer transition-all;
+}
+.icon-btn:hover { @apply text-txt-2 bg-surface-2 border-brd-2; }
+.icon-btn.danger:hover { @apply text-danger bg-danger-dim border-danger/20; }
+.icon-btn.warn:hover { @apply text-amber bg-amber-dim border-amber/20; }
+
+.btn-danger-sm {
+  @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg
+    bg-danger-dim text-danger border border-danger/15
+    font-medium text-[0.78rem] cursor-pointer transition-all;
+}
+.btn-danger-sm:hover { @apply bg-danger/15 border-danger/30; }
+
+.btn-run {
+  @apply inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg
+    bg-lime-dim text-lime border border-lime/20
+    font-mono font-medium text-[0.75rem] cursor-pointer transition-all;
+}
+.btn-run:hover {
+  @apply bg-lime/20 border-lime/40;
+  box-shadow: 0 0 16px var(--color-lime-dim);
+}
+
+/* Primary + Ghost buttons */
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-1.5 px-5 py-2.5
+    bg-lime text-bg rounded-lg font-semibold text-[0.85rem]
+    cursor-pointer transition-all;
+}
+.btn-primary:hover {
+  box-shadow: 0 0 20px var(--color-lime-glow);
+  transform: translateY(-1px);
+}
+.btn-primary:active { @apply translate-y-0 opacity-90; }
+.btn-primary:disabled { @apply opacity-50 cursor-not-allowed; }
+.btn-primary.btn-sm { @apply px-3 py-1.5 text-[0.78rem]; }
+
+.btn-ghost {
+  @apply inline-flex items-center gap-1.5 px-4 py-2
+    bg-transparent text-txt-2 border border-brd rounded-lg
+    font-medium text-[0.82rem] cursor-pointer transition-all;
+}
+.btn-ghost:hover { @apply text-txt bg-surface-2 border-brd-2; }
+.btn-ghost.btn-sm { @apply px-3 py-1.5 text-[0.78rem]; }
+
+/* Form elements */
+.form-row {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 0.4rem 1rem;
+  align-items: center;
+  margin-bottom: 0.8rem;
+}
+@media (max-width: 640px) {
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
+  }
+}
+
+.form-label {
+  @apply font-mono text-[0.68rem] text-txt-3 uppercase tracking-widest;
+}
+.form-label.top { @apply self-start pt-2; }
+
+.form-input {
+  @apply w-full px-3 py-2.5 bg-bg border border-brd rounded-lg
+    text-txt font-sans text-[0.85rem] transition-all;
+}
+.form-input:focus { @apply outline-none border-lime ring-3 ring-lime-dim; }
+.form-input[readonly] { @apply opacity-50 cursor-not-allowed; }
+
+.form-select {
+  @apply px-3 py-2.5 bg-bg border border-brd rounded-lg
+    text-txt font-sans text-[0.85rem] cursor-pointer transition-all;
+}
+.form-select:focus { @apply outline-none border-lime; }
+
+.form-textarea {
+  @apply w-full px-3 py-3 bg-bg border border-brd rounded-lg
+    text-txt font-mono text-[0.82rem] leading-relaxed
+    resize-y transition-all;
+  min-height: 100px;
+}
+.form-textarea:focus { @apply outline-none border-lime ring-3 ring-lime-dim; }

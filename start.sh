@@ -40,16 +40,33 @@ touch "${AGENT_HOME}/memory/MEMORY.md"
 
 # --- Config check ---
 if [[ ! -f "${AGENT_HOME}/config/agent.conf" ]]; then
-  cp "${AGENT_HOME}/config/agent.conf.example" "${AGENT_HOME}/config/agent.conf"
-  echo "Created config/agent.conf from template."
-  echo "Edit it with your Telegram bot token and group ID, then re-run."
-  exit 0
+  # Check if a backup exists (recover from accidental deletion)
+  if [[ -f "${AGENT_HOME}/config/agent.conf.bak" ]]; then
+    cp "${AGENT_HOME}/config/agent.conf.bak" "${AGENT_HOME}/config/agent.conf"
+    echo "WARNING: config/agent.conf was missing — restored from agent.conf.bak"
+  else
+    cp "${AGENT_HOME}/config/agent.conf.example" "${AGENT_HOME}/config/agent.conf"
+    echo "Created config/agent.conf from template."
+    echo "Edit it with your Telegram bot token and group ID, then re-run."
+    exit 0
+  fi
 fi
+
+# Always keep a backup of working config
+cp "${AGENT_HOME}/config/agent.conf" "${AGENT_HOME}/config/agent.conf.bak"
 
 source "${AGENT_HOME}/config/agent.conf"
 if [[ -z "${TELEGRAM_BOT_TOKEN:-}" || -z "${TELEGRAM_GROUP_ID:-}" ]]; then
   echo "ERROR: TELEGRAM_BOT_TOKEN and TELEGRAM_GROUP_ID must be set in config/agent.conf"
   exit 1
+fi
+
+# --- Start admin panel ---
+PANEL_PID=""
+if [[ -n "${ADMIN_TOKEN:-}" ]]; then
+  AGENT_HOME="${AGENT_HOME}" node "${AGENT_HOME}/panel/server.cjs" &
+  PANEL_PID=$!
+  echo "Admin panel: http://0.0.0.0:${PANEL_PORT:-3000} (PID ${PANEL_PID})"
 fi
 
 # --- Kill stale instances ---
@@ -64,7 +81,11 @@ fi
 # --- Lock cleanup on exit ---
 # The cron wrapper creates data/heartbeat.lock before invoking this script.
 # Register a trap so the lock is always removed even if we crash or are killed.
-trap "rmdir '${AGENT_HOME}/data/heartbeat.lock' 2>/dev/null || true" EXIT
+cleanup() {
+  [[ -n "${PANEL_PID:-}" ]] && kill "$PANEL_PID" 2>/dev/null || true
+  rmdir "${AGENT_HOME}/data/heartbeat.lock" 2>/dev/null || true
+}
+trap cleanup EXIT
 trap "exit 130" INT TERM
 
 # --- Flush stale Telegram updates ---
@@ -101,4 +122,5 @@ fi
 # it on exit so the next cron invocation can detect the crash and restart.
 while true; do
   "${AGENT_HOME}/bin/heartbeat.sh" 2>&1 || true
+  sleep 1  # prevent tight-loop spinning between beats
 done
