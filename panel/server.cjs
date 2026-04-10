@@ -24,9 +24,16 @@ function loadConfig() {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
-    // Handle: KEY="value" or KEY=value or export KEY=value
-    const match = trimmed.match(/^(?:export\s+)?([A-Z_][A-Z0-9_]*)=["']?([^"']*)["']?$/);
-    if (match) config[match[1]] = match[2];
+    // Match KEY=value, KEY="value", KEY='value', export KEY=value
+    const match = trimmed.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (match) {
+      let val = match[2];
+      // Strip outer quotes (single or double)
+      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      config[match[1]] = val;
+    }
   }
   return config;
 }
@@ -285,8 +292,8 @@ async function apiCreateSchedule(req, res) {
   if (body.provider && !getProviders().includes(body.provider)) {
     return sendJSON(res, 400, { error: 'Invalid provider' });
   }
-  if (body.workdir && !body.workdir.startsWith('/git')) {
-    return sendJSON(res, 400, { error: 'Workdir must start with /git' });
+  if (body.workdir && !body.workdir.startsWith('/')) {
+    return sendJSON(res, 400, { error: 'Workdir must be an absolute path' });
   }
 
   if (schedules.find(s => s.name === body.name)) {
@@ -316,8 +323,8 @@ async function apiUpdateSchedule(req, res, params) {
   if (body.provider && !getProviders().includes(body.provider)) {
     return sendJSON(res, 400, { error: 'Invalid provider' });
   }
-  if (body.workdir && !body.workdir.startsWith('/git')) {
-    return sendJSON(res, 400, { error: 'Workdir must start with /git' });
+  if (body.workdir && !body.workdir.startsWith('/')) {
+    return sendJSON(res, 400, { error: 'Workdir must be an absolute path' });
   }
   if (body.cron !== undefined) s.cron = body.cron;
   if (body.prompt !== undefined) s.prompt = body.prompt;
@@ -370,7 +377,9 @@ function apiStatus(req, res) {
   const schedules = readJSON(SCHEDULES_FILE);
   sendJSON(res, 200, {
     defaultProvider: state.default_provider || config.DEFAULT_PROVIDER || 'claude',
-    topicCount: Object.keys(state.topics || {}).length,
+    topicCount: (() => {
+      try { return fs.readdirSync(TOPICS_DIR).filter(d => /^\d+$/.test(d)).length; } catch { return 0; }
+    })(),
     scheduleCount: schedules.length,
     heartbeatInterval: parseInt(config.HEARTBEAT_INTERVAL_MIN || '30', 10),
     pollTimeout: parseInt(config.POLL_TIMEOUT || '55', 10),

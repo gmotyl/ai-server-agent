@@ -62,8 +62,11 @@ export function ScheduleForm({ schedule, onDone, onCancel }: Props) {
     }
   }
 
-  // Build minute options (5-min steps + current value if non-standard)
-  const minSteps = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]
+  // Build minute options aligned to heartbeat interval
+  const hbInterval = status?.heartbeatInterval ?? 30
+  const minSteps: number[] = []
+  for (let m = 0; m < 60; m += hbInterval) minSteps.push(m)
+  // Include current value if editing a schedule with a non-aligned minute
   if (!minSteps.includes(minute)) minSteps.push(minute)
   minSteps.sort((a, b) => a - b)
 

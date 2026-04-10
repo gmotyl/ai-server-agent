@@ -74,3 +74,66 @@ html {
   @apply bg-lime/20 border-lime/40;
   box-shadow: 0 0 16px var(--color-lime-dim);
 }
+
+/* Primary + Ghost buttons */
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-1.5 px-5 py-2.5
+    bg-lime text-bg rounded-lg font-semibold text-[0.85rem]
+    cursor-pointer transition-all;
+}
+.btn-primary:hover {
+  box-shadow: 0 0 20px var(--color-lime-glow);
+  transform: translateY(-1px);
+}
+.btn-primary:active { @apply translate-y-0 opacity-90; }
+.btn-primary:disabled { @apply opacity-50 cursor-not-allowed; }
+.btn-primary.btn-sm { @apply px-3 py-1.5 text-[0.78rem]; }
+
+.btn-ghost {
+  @apply inline-flex items-center gap-1.5 px-4 py-2
+    bg-transparent text-txt-2 border border-brd rounded-lg
+    font-medium text-[0.82rem] cursor-pointer transition-all;
+}
+.btn-ghost:hover { @apply text-txt bg-surface-2 border-brd-2; }
+.btn-ghost.btn-sm { @apply px-3 py-1.5 text-[0.78rem]; }
+
+/* Form elements */
+.form-row {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 0.4rem 1rem;
+  align-items: center;
+  margin-bottom: 0.8rem;
+}
+@media (max-width: 640px) {
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
+  }
+}
+
+.form-label {
+  @apply font-mono text-[0.68rem] text-txt-3 uppercase tracking-widest;
+}
+.form-label.top { @apply self-start pt-2; }
+
+.form-input {
+  @apply w-full px-3 py-2.5 bg-bg border border-brd rounded-lg
+    text-txt font-sans text-[0.85rem] transition-all;
+}
+.form-input:focus { @apply outline-none border-lime ring-3 ring-lime-dim; }
+.form-input[readonly] { @apply opacity-50 cursor-not-allowed; }
+
+.form-select {
+  @apply px-3 py-2.5 bg-bg border border-brd rounded-lg
+    text-txt font-sans text-[0.85rem] cursor-pointer transition-all;
+}
+.form-select:focus { @apply outline-none border-lime; }
+
+.form-textarea {
+  @apply w-full px-3 py-3 bg-bg border border-brd rounded-lg
+    text-txt font-mono text-[0.82rem] leading-relaxed
+    resize-y transition-all;
+  min-height: 100px;
+}
+.form-textarea:focus { @apply outline-none border-lime ring-3 ring-lime-dim; }
