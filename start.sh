@@ -122,4 +122,5 @@ fi
 # it on exit so the next cron invocation can detect the crash and restart.
 while true; do
   "${AGENT_HOME}/bin/heartbeat.sh" 2>&1 || true
+  sleep 1  # prevent tight-loop spinning between beats
 done

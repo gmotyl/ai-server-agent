@@ -5,6 +5,8 @@
 AGENT_HOME="${AGENT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 export AGENT_HOME
 
+STATE_LOCK="${AGENT_HOME}/data/state.lock"
+
 # Load config
 load_config() {
   local config_file="${AGENT_HOME}/config/agent.conf"
@@ -29,24 +31,33 @@ log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $*"
 }
 
-# Read JSON field from state.json
+# Read JSON field from state.json (locked to prevent reading mid-write)
 read_state() {
   local key="$1"
-  jq -r "$key" "${AGENT_HOME}/data/state.json" 2>/dev/null || echo ""
+  (
+    flock -s 200
+    jq -r "$key" "${AGENT_HOME}/data/state.json" 2>/dev/null || echo ""
+  ) 200>"$STATE_LOCK"
 }
 
-# Write JSON field to state.json (string value)
+# Write JSON field to state.json (string value, exclusive lock)
 write_state() {
   local key="$1"
   local value="$2"
-  local tmp="${AGENT_HOME}/data/state.json.tmp.$$"
-  jq --arg v "$value" "$key = \$v" "${AGENT_HOME}/data/state.json" > "$tmp" && mv "$tmp" "${AGENT_HOME}/data/state.json"
+  (
+    flock -x 200
+    local tmp="${AGENT_HOME}/data/state.json.tmp.$$"
+    jq --arg v "$value" "$key = \$v" "${AGENT_HOME}/data/state.json" > "$tmp" && mv "$tmp" "${AGENT_HOME}/data/state.json"
+  ) 200>"$STATE_LOCK"
 }
 
-# Write JSON field to state.json (raw/numeric value)
+# Write JSON field to state.json (raw/numeric value, exclusive lock)
 write_state_raw() {
   local key="$1"
   local value="$2"
-  local tmp="${AGENT_HOME}/data/state.json.tmp.$$"
-  jq --argjson v "$value" "$key = \$v" "${AGENT_HOME}/data/state.json" > "$tmp" && mv "$tmp" "${AGENT_HOME}/data/state.json"
+  (
+    flock -x 200
+    local tmp="${AGENT_HOME}/data/state.json.tmp.$$"
+    jq --argjson v "$value" "$key = \$v" "${AGENT_HOME}/data/state.json" > "$tmp" && mv "$tmp" "${AGENT_HOME}/data/state.json"
+  ) 200>"$STATE_LOCK"
 }

@@ -1,6 +1,7 @@
 # Runtime state
 config/agent.conf
 config/agent.conf.bak
+data/state.lock
 data/
 memory/
 logs/
