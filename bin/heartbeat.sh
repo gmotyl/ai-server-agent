@@ -44,7 +44,26 @@ for ((i=0; i<update_count; i++)); do
     msg_text=\(.message.text // "")
     topic_id=\(.message.message_thread_id // "")
     from_user=\(.message.from.first_name // "unknown")
+    svc_topic_created=\(.message.forum_topic_created.name // "")
+    svc_topic_closed=\(if .message | has("forum_topic_closed") then "1" else "" end)
+    svc_topic_reopened=\(if .message | has("forum_topic_reopened") then "1" else "" end)
   "')"
+
+  # Handle topic service messages (no text, but still useful metadata)
+  if [[ -n "$topic_id" ]]; then
+    if [[ -n "$svc_topic_created" ]]; then
+      write_state ".topic_names.\"${topic_id}\"" "$svc_topic_created"
+      log "INFO" "Topic ${topic_id} name stored: ${svc_topic_created}"
+    fi
+    if [[ "$svc_topic_closed" == "1" ]]; then
+      write_state_raw ".topics.\"${topic_id}\".active" "false"
+      log "INFO" "Topic ${topic_id} closed (Telegram)"
+    fi
+    if [[ "$svc_topic_reopened" == "1" ]]; then
+      write_state_raw ".topics.\"${topic_id}\".active" "true"
+      log "INFO" "Topic ${topic_id} reopened (Telegram)"
+    fi
+  fi
 
   # Skip if no text or no topic
   [[ -z "$msg_text" || -z "$topic_id" ]] && continue

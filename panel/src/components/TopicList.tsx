@@ -10,6 +10,7 @@ export function TopicList() {
   const [topics, setTopics] = useState<Topic[]>([])
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -19,6 +20,19 @@ export function TopicList() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  const syncTelegram = async () => {
+    setSyncing(true)
+    try {
+      const result = await api<{ updatesScanned: number; namesFound: number; closedFound: number; reopenedFound: number }>('POST', '/topics/sync')
+      showToast(`Sync done: ${result.updatesScanned} updates scanned, ${result.namesFound} names, ${result.closedFound} closed, ${result.reopenedFound} reopened`)
+      load()
+    } catch {
+      showToast('Sync failed')
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const closeTopic = async (id: string) => {
     await api<unknown>('POST', `/topics/${id}/close`)
@@ -48,9 +62,17 @@ export function TopicList() {
     <section>
       <div className="flex items-center justify-between mb-4">
         <h2 className="font-display font-bold text-xl tracking-tight">Topic History</h2>
-        <button onClick={load} className="icon-btn" title="Refresh">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 8a6 6 0 0 1 10.3-4.2M14 2v4h-4M14 8a6 6 0 0 1-10.3 4.2M2 14v-4h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-        </button>
+        <div className="flex gap-1.5">
+          <button onClick={load} className="icon-btn" title="Refresh">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 8a6 6 0 0 1 10.3-4.2M14 2v4h-4M14 8a6 6 0 0 1-10.3 4.2M2 14v-4h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+          <button onClick={syncTelegram} disabled={syncing} className="icon-btn" title="Sync closed topics from Telegram">
+            {syncing
+              ? <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="animate-spin"><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" strokeDasharray="20 10" /></svg>
+              : <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1v3M8 12v3M1 8h3M12 8h3M3.05 3.05l2.12 2.12M10.83 10.83l2.12 2.12M3.05 12.95l2.12-2.12M10.83 5.17l2.12-2.12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+            }
+          </button>
+        </div>
       </div>
 
       {loading ? (

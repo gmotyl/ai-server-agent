@@ -3,6 +3,7 @@
 // Zero npm dependencies. Uses only Node.js built-in modules.
 
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -10,18 +11,14 @@ const { execFile } = require('child_process');
 
 // --- Config ---
 
-const AGENT_HOME = process.env.AGENT_HOME || path.resolve(__dirname, '..');
-const CONFIG_FILE = path.join(AGENT_HOME, 'config', 'agent.conf');
-const STATE_FILE = path.join(AGENT_HOME, 'data', 'state.json');
-const SCHEDULES_FILE = path.join(AGENT_HOME, 'data', 'schedules.json');
-const TOPICS_DIR = path.join(AGENT_HOME, 'memory', 'topics');
-const MEMORY_FILE = path.join(AGENT_HOME, 'memory', 'MEMORY.md');
-const STATIC_DIR = path.join(__dirname, 'dist');
+// Bootstrap: find the config file using env or code-relative path
+const _BOOT_HOME = process.env.AGENT_HOME || path.resolve(__dirname, '..');
+const _BOOT_CONFIG = path.join(_BOOT_HOME, 'config', 'agent.conf');
 
-function loadConfig() {
+function parseConfigFile(configFile) {
   const config = {};
-  if (!fs.existsSync(CONFIG_FILE)) return config;
-  const lines = fs.readFileSync(CONFIG_FILE, 'utf8').split('\n');
+  if (!fs.existsSync(configFile)) return config;
+  const lines = fs.readFileSync(configFile, 'utf8').split('\n');
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
@@ -38,6 +35,23 @@ function loadConfig() {
   }
   return config;
 }
+
+// First pass: read config to discover real AGENT_HOME
+const _bootConfig = parseConfigFile(_BOOT_CONFIG);
+
+// Resolve final AGENT_HOME: config file value takes precedence over env/default
+const AGENT_HOME = _bootConfig.AGENT_HOME || _BOOT_HOME;
+
+// Derive all data paths from the resolved AGENT_HOME
+const CONFIG_FILE = path.join(AGENT_HOME, 'config', 'agent.conf');
+const STATE_FILE = path.join(AGENT_HOME, 'data', 'state.json');
+const SCHEDULES_FILE = path.join(AGENT_HOME, 'data', 'schedules.json');
+const TOPICS_DIR = path.join(AGENT_HOME, 'memory', 'topics');
+const MEMORY_FILE = path.join(AGENT_HOME, 'memory', 'MEMORY.md');
+const STATIC_DIR = path.join(__dirname, 'dist');
+
+// Second pass: reload config from canonical path (may differ if AGENT_HOME changed)
+function loadConfig() { return parseConfigFile(CONFIG_FILE); }
 
 const config = loadConfig();
 const ADMIN_TOKEN = config.ADMIN_TOKEN || process.env.ADMIN_TOKEN || '';
@@ -158,6 +172,7 @@ function apiTopics(req, res) {
   // Collect from state.json topics
   const stateTopics = state.topics || {};
   const topicProviders = state.topic_providers || {};
+  const topicNames = state.topic_names || {};
 
   // Scan topic directories for data
   let topicDirs = [];
@@ -206,7 +221,7 @@ function apiTopics(req, res) {
       messageCount: msgCount,
       lastActivity,
       scheduleName,
-      label: scheduleName ? `Scheduled: ${scheduleName}` : `Topic ${id}`,
+      label: scheduleName ? `Scheduled: ${scheduleName}` : (topicNames[id] || `Thread ${id}`),
     });
   }
 
@@ -286,6 +301,81 @@ function apiCloseTopic(req, res, params) {
   state.topics[params.id].active = false;
   writeJSON(STATE_FILE, state);
   sendJSON(res, 200, { ok: true });
+}
+
+// Helper: make a GET request to Telegram Bot API
+function telegramGet(method, params) {
+  return new Promise((resolve, reject) => {
+    const token = config.TELEGRAM_BOT_TOKEN || '';
+    if (!token) return reject(new Error('TELEGRAM_BOT_TOKEN not configured'));
+    const qs = new URLSearchParams(params).toString();
+    const url = `https://api.telegram.org/bot${token}/${method}?${qs}`;
+    https.get(url, (resp) => {
+      let data = '';
+      resp.on('data', chunk => { data += chunk; });
+      resp.on('end', () => {
+        try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+      });
+    }).on('error', reject);
+  });
+}
+
+async function apiSyncTopics(req, res) {
+  const state = readJSON(STATE_FILE);
+  const offset = state.last_update_id || 0;
+
+  let updates;
+  try {
+    updates = await telegramGet('getUpdates', { timeout: 0, limit: 100, offset, allowed_updates: '["message"]' });
+  } catch (err) {
+    return sendJSON(res, 500, { error: `Telegram API error: ${err.message}` });
+  }
+
+  if (!updates.ok || !Array.isArray(updates.result)) {
+    return sendJSON(res, 502, { error: 'Telegram API returned error', detail: updates });
+  }
+
+  const freshState = readJSON(STATE_FILE);
+  if (!freshState.topic_names) freshState.topic_names = {};
+  if (!freshState.topics) freshState.topics = {};
+
+  let namesFound = 0, closedFound = 0, reopenedFound = 0;
+
+  for (const update of updates.result) {
+    const msg = update.message;
+    if (!msg) continue;
+    const tid = String(msg.message_thread_id || '');
+    if (!tid) continue;
+
+    // forum_topic_created: store name
+    if (msg.forum_topic_created && msg.forum_topic_created.name) {
+      freshState.topic_names[tid] = msg.forum_topic_created.name;
+      namesFound++;
+    }
+
+    // forum_topic_closed: mark inactive
+    if ('forum_topic_closed' in msg) {
+      if (!freshState.topics[tid]) freshState.topics[tid] = {};
+      freshState.topics[tid].active = false;
+      closedFound++;
+    }
+
+    // forum_topic_reopened: mark active
+    if ('forum_topic_reopened' in msg) {
+      if (!freshState.topics[tid]) freshState.topics[tid] = {};
+      freshState.topics[tid].active = true;
+      reopenedFound++;
+    }
+  }
+
+  writeJSON(STATE_FILE, freshState);
+  sendJSON(res, 200, {
+    ok: true,
+    updatesScanned: updates.result.length,
+    namesFound,
+    closedFound,
+    reopenedFound,
+  });
 }
 
 function apiSchedules(req, res) {
@@ -481,6 +571,7 @@ const server = http.createServer(async (req, res) => {
       if (method === 'GET' && (params = matchRoute('/api/topics/:id/context', pathname))) return apiTopicContext(req, res, params);
       if (method === 'DELETE' && (params = matchRoute('/api/topics/:id', pathname))) return apiDeleteTopic(req, res, params);
       if (method === 'POST' && (params = matchRoute('/api/topics/:id/close', pathname))) return apiCloseTopic(req, res, params);
+      if (method === 'POST' && pathname === '/api/topics/sync') return apiSyncTopics(req, res);
 
       // Schedules
       if (method === 'GET' && pathname === '/api/schedules') return apiSchedules(req, res);
