@@ -1,5 +1,6 @@
 # Runtime state
 config/agent.conf
+config/agent.conf.bak
 data/
 memory/
 logs/

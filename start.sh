@@ -40,11 +40,20 @@ touch "${AGENT_HOME}/memory/MEMORY.md"
 
 # --- Config check ---
 if [[ ! -f "${AGENT_HOME}/config/agent.conf" ]]; then
-  cp "${AGENT_HOME}/config/agent.conf.example" "${AGENT_HOME}/config/agent.conf"
-  echo "Created config/agent.conf from template."
-  echo "Edit it with your Telegram bot token and group ID, then re-run."
-  exit 0
+  # Check if a backup exists (recover from accidental deletion)
+  if [[ -f "${AGENT_HOME}/config/agent.conf.bak" ]]; then
+    cp "${AGENT_HOME}/config/agent.conf.bak" "${AGENT_HOME}/config/agent.conf"
+    echo "WARNING: config/agent.conf was missing — restored from agent.conf.bak"
+  else
+    cp "${AGENT_HOME}/config/agent.conf.example" "${AGENT_HOME}/config/agent.conf"
+    echo "Created config/agent.conf from template."
+    echo "Edit it with your Telegram bot token and group ID, then re-run."
+    exit 0
+  fi
 fi
+
+# Always keep a backup of working config
+cp "${AGENT_HOME}/config/agent.conf" "${AGENT_HOME}/config/agent.conf.bak"
 
 source "${AGENT_HOME}/config/agent.conf"
 if [[ -z "${TELEGRAM_BOT_TOKEN:-}" || -z "${TELEGRAM_GROUP_ID:-}" ]]; then
