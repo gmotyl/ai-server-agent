@@ -42,6 +42,11 @@ const config = loadConfig();
 const ADMIN_TOKEN = config.ADMIN_TOKEN || process.env.ADMIN_TOKEN || '';
 const PANEL_PORT = parseInt(config.PANEL_PORT || process.env.PANEL_PORT || '3000', 10);
 
+console.log(`[panel] AGENT_HOME: ${AGENT_HOME}`);
+console.log(`[panel] CONFIG: ${CONFIG_FILE}`);
+console.log(`[panel] SCHEDULES: ${SCHEDULES_FILE}`);
+console.log(`[panel] STATIC: ${STATIC_DIR}`);
+
 if (!ADMIN_TOKEN) {
   console.error('ADMIN_TOKEN not set in config/agent.conf. Panel disabled.');
   process.exit(0);
@@ -270,7 +275,9 @@ function apiCloseTopic(req, res, params) {
 }
 
 function apiSchedules(req, res) {
+  console.log(`[api] GET /api/schedules — reading ${SCHEDULES_FILE}`);
   const schedules = readJSON(SCHEDULES_FILE);
+  console.log(`[api] Found ${schedules.length} schedule(s):`, schedules.map(s => s.name));
   const state = readJSON(STATE_FILE);
   const lastRuns = state.schedules_last_run || {};
 
