@@ -101,14 +101,18 @@ ln -s /share/CACHEDEV1_DATA/ai-server-agent ~/ai-server-agent
 
 ### 3. Build the Docker image
 
-The repository ships a single runtime image with Claude Code and Qwen installed for a generic non-root `agent` user. Build it with:
+The repository ships a multi-stage Dockerfile: stage 1 builds the React admin panel, stage 2 creates the runtime image with Claude Code and Qwen. Build it with:
 
 ```bash
 cd /share/CACHEDEV1_DATA/ai-server-agent
-/usr/local/lib/docker/cli-plugins/docker-compose -f docker/docker-compose.yml build ai-agent
+sudo docker build -f docker/Dockerfile -t ai-server-agent .
 ```
 
-This builds from `docker/Dockerfile`.
+> **Important:** On QNAP, Docker requires `sudo` for build operations. The `gomes` user cannot run `docker build` without it. You will be prompted for your password.
+>
+> `docker compose run` (used by `docker-provider.sh` at runtime) does NOT require sudo — only the initial image build does.
+
+This builds from `docker/Dockerfile`. The panel is compiled during the build (no Node.js needed on the host).
 
 > **Tip:** If you already have a working agent runtime image (e.g., from another project), you can reuse it. Update `docker/docker-compose.yml` to reference that image and set `entrypoint: []` to override any default entrypoint:
 > ```yaml
@@ -162,11 +166,21 @@ TELEGRAM_GROUP_ID="-100xxxxxxxxxx"
 PROVIDER_CMD_claude='"${AGENT_HOME}/bin/docker-provider.sh" claude {prompt_file}'
 PROVIDER_CMD_qwen='"${AGENT_HOME}/bin/docker-provider.sh" qwen {prompt_file}'
 
+# Admin Panel (set token to enable, leave empty to disable)
+ADMIN_TOKEN="your-secret-token"
+PANEL_PORT=3000
+
 # Paths (must be exported — provider runs in a bash -c subprocess)
 export AGENT_HOME="/share/CACHEDEV1_DATA/ai-server-agent"
 export GIT_DIR="/share/CACHEDEV1_DATA/git"
 export CONTAINER_GIT_DIR="/git"
 ```
+
+> **Admin Panel:** When `ADMIN_TOKEN` is set, `start.sh` launches a web panel on `http://NAS_IP:3000`. The Docker compose file must expose the port:
+> ```yaml
+> ports:
+>   - "3000:3000"
+> ```
 
 #### Git repos volume mapping
 
@@ -288,4 +302,10 @@ Or if git works on your NAS (with Entware git over SSH):
 ```bash
 cd ~/ai-server-agent
 git pull
+```
+
+If the Dockerfile or panel code changed, rebuild the image:
+
+```bash
+sudo docker build -f docker/Dockerfile -t ai-server-agent .
 ```
