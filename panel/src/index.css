@@ -48,3 +48,29 @@ html {
   background: var(--color-lime-dim);
   color: var(--color-lime);
 }
+
+/* Reusable component classes */
+.icon-btn {
+  @apply inline-flex items-center justify-center w-8 h-8 rounded-lg border border-brd
+    bg-transparent text-txt-3 cursor-pointer transition-all;
+}
+.icon-btn:hover { @apply text-txt-2 bg-surface-2 border-brd-2; }
+.icon-btn.danger:hover { @apply text-danger bg-danger-dim border-danger/20; }
+.icon-btn.warn:hover { @apply text-amber bg-amber-dim border-amber/20; }
+
+.btn-danger-sm {
+  @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg
+    bg-danger-dim text-danger border border-danger/15
+    font-medium text-[0.78rem] cursor-pointer transition-all;
+}
+.btn-danger-sm:hover { @apply bg-danger/15 border-danger/30; }
+
+.btn-run {
+  @apply inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg
+    bg-lime-dim text-lime border border-lime/20
+    font-mono font-medium text-[0.75rem] cursor-pointer transition-all;
+}
+.btn-run:hover {
+  @apply bg-lime/20 border-lime/40;
+  box-shadow: 0 0 16px var(--color-lime-dim);
+}
