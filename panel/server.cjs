@@ -359,10 +359,14 @@ function apiRunSchedule(req, res, params) {
   if (!schedules.find(s => s.name === params.name)) return send404(res);
 
   const script = path.join(AGENT_HOME, 'bin', 'schedule-run.sh');
-  execFile(script, [params.name], { env: { ...process.env, AGENT_HOME } }, (err, stdout, stderr) => {
+  execFile('/bin/bash', [script, params.name], {
+    env: { ...process.env, AGENT_HOME },
+    cwd: AGENT_HOME,
+  }, (err, stdout, stderr) => {
     if (err) {
-      console.error(`schedule-run.sh error: ${stderr || err.message}`);
+      console.error(`schedule-run.sh error for '${params.name}':`, stderr || err.message);
     }
+    if (stdout) console.log(`schedule-run.sh stdout:`, stdout.slice(0, 500));
   });
 
   sendJSON(res, 202, { ok: true, message: `Running '${params.name}' in background` });
