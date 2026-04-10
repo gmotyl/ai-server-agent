@@ -5,6 +5,7 @@ import { Login } from './components/Login'
 import { Layout } from './components/Layout'
 import { TopicList } from './components/TopicList'
 import { ScheduleList } from './components/ScheduleList'
+import { Memory } from './components/Memory'
 import { Settings } from './components/Settings'
 import { Toast } from './components/Toast'
 import './index.css'
@@ -16,6 +17,7 @@ function App() {
     <Layout
       topicsPanel={<TopicList />}
       schedulesPanel={<ScheduleList />}
+      memoryPanel={<Memory />}
       settingsPanel={<Settings />}
     />
   )

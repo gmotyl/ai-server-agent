@@ -15,6 +15,7 @@ const CONFIG_FILE = path.join(AGENT_HOME, 'config', 'agent.conf');
 const STATE_FILE = path.join(AGENT_HOME, 'data', 'state.json');
 const SCHEDULES_FILE = path.join(AGENT_HOME, 'data', 'schedules.json');
 const TOPICS_DIR = path.join(AGENT_HOME, 'memory', 'topics');
+const MEMORY_FILE = path.join(AGENT_HOME, 'memory', 'MEMORY.md');
 const STATIC_DIR = path.join(__dirname, 'dist');
 
 function loadConfig() {
@@ -234,6 +235,19 @@ function apiTopicContext(req, res, params) {
   const ctxFile = path.join(TOPICS_DIR, params.id, 'context.md');
   if (!fs.existsSync(ctxFile)) return sendJSON(res, 200, { content: '' });
   sendJSON(res, 200, { content: fs.readFileSync(ctxFile, 'utf8') });
+}
+
+function apiGetMemory(req, res) {
+  const content = fs.existsSync(MEMORY_FILE) ? fs.readFileSync(MEMORY_FILE, 'utf8') : '';
+  sendJSON(res, 200, { content });
+}
+
+async function apiSaveMemory(req, res) {
+  const body = await readBody(req);
+  if (typeof body.content !== 'string') return sendJSON(res, 400, { error: 'content required' });
+  fs.mkdirSync(path.dirname(MEMORY_FILE), { recursive: true });
+  fs.writeFileSync(MEMORY_FILE, body.content, 'utf8');
+  sendJSON(res, 200, { ok: true });
 }
 
 function apiDeleteTopic(req, res, params) {
@@ -474,6 +488,10 @@ const server = http.createServer(async (req, res) => {
       if (method === 'PUT' && (params = matchRoute('/api/schedules/:name', pathname))) return apiUpdateSchedule(req, res, params);
       if (method === 'DELETE' && (params = matchRoute('/api/schedules/:name', pathname))) return apiDeleteSchedule(req, res, params);
       if (method === 'POST' && (params = matchRoute('/api/schedules/:name/run', pathname))) return apiRunSchedule(req, res, params);
+
+      // Memory
+      if (method === 'GET' && pathname === '/api/memory') return apiGetMemory(req, res);
+      if (method === 'PUT' && pathname === '/api/memory') return apiSaveMemory(req, res);
 
       // System
       if (method === 'GET' && pathname === '/api/providers') return apiProviders(req, res);

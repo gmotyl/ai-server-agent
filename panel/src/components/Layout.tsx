@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useStore } from '../store'
 import clsx from 'clsx'
 
-type Tab = 'topics' | 'schedules' | 'settings'
+type Tab = 'topics' | 'schedules' | 'memory' | 'settings'
 
 const tabs: { id: Tab; label: string; icon: ReactNode }[] = [
   {
@@ -16,6 +16,11 @@ const tabs: { id: Tab; label: string; icon: ReactNode }[] = [
     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.3" /><path d="M8 5v3.5l2.5 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>,
   },
   {
+    id: 'memory',
+    label: 'Memory',
+    icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.5C5 1.5 2.5 3.7 2.5 6.5c0 1.7.9 3.2 2.3 4.1V12a.5.5 0 0 0 .5.5h5a.5.5 0 0 0 .5-.5v-1.4c1.4-.9 2.2-2.4 2.2-4.1C13 3.7 10.5 1.5 8 1.5z" stroke="currentColor" strokeWidth="1.3" /><path d="M5.5 14.5h5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>,
+  },
+  {
     id: 'settings',
     label: 'Settings',
     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3" /><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>,
@@ -25,16 +30,18 @@ const tabs: { id: Tab; label: string; icon: ReactNode }[] = [
 interface Props {
   topicsPanel: ReactNode
   schedulesPanel: ReactNode
+  memoryPanel: ReactNode
   settingsPanel: ReactNode
 }
 
-export function Layout({ topicsPanel, schedulesPanel, settingsPanel }: Props) {
+export function Layout({ topicsPanel, schedulesPanel, memoryPanel, settingsPanel }: Props) {
   const { status, logout } = useStore()
   const [activeTab, setActiveTab] = useState<Tab>('topics')
 
   const panels: Record<Tab, ReactNode> = {
     topics: topicsPanel,
     schedules: schedulesPanel,
+    memory: memoryPanel,
     settings: settingsPanel,
   }
 
