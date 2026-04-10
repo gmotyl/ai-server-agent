@@ -39,8 +39,10 @@ function parseConfigFile(configFile) {
 // First pass: read config to discover real AGENT_HOME
 const _bootConfig = parseConfigFile(_BOOT_CONFIG);
 
-// Resolve final AGENT_HOME: config file value takes precedence over env/default
-const AGENT_HOME = _bootConfig.AGENT_HOME || _BOOT_HOME;
+// Resolve final AGENT_HOME: config file value takes precedence, but only if the path exists.
+// In containers the conf may contain a host path that isn't mounted at the same location.
+const _configHome = _bootConfig.AGENT_HOME;
+const AGENT_HOME = (_configHome && fs.existsSync(_configHome)) ? _configHome : _BOOT_HOME;
 
 // Derive all data paths from the resolved AGENT_HOME
 const CONFIG_FILE = path.join(AGENT_HOME, 'config', 'agent.conf');
