@@ -219,6 +219,7 @@ function apiTopics(req, res) {
     topics.push({
       id: String(id),
       active: stateTopics[id]?.active !== false,
+      archived: stateTopics[id]?.archived === true,
       provider: topicProviders[id] || config.DEFAULT_PROVIDER || 'claude',
       messageCount: msgCount,
       lastActivity,
@@ -301,6 +302,40 @@ function apiCloseTopic(req, res, params) {
   if (!state.topics) state.topics = {};
   if (!state.topics[params.id]) state.topics[params.id] = {};
   state.topics[params.id].active = false;
+  writeJSON(STATE_FILE, state);
+  sendJSON(res, 200, { ok: true });
+}
+
+function apiArchiveTopic(req, res, params) {
+  if (!validateTopicId(params.id)) return sendJSON(res, 400, { error: 'Invalid topic ID' });
+  const state = readJSON(STATE_FILE);
+  if (!state.topics) state.topics = {};
+  if (!state.topics[params.id]) state.topics[params.id] = {};
+  state.topics[params.id].archived = true;
+  state.topics[params.id].active = false;
+  writeJSON(STATE_FILE, state);
+  sendJSON(res, 200, { ok: true });
+}
+
+function apiUnarchiveTopic(req, res, params) {
+  if (!validateTopicId(params.id)) return sendJSON(res, 400, { error: 'Invalid topic ID' });
+  const state = readJSON(STATE_FILE);
+  if (!state.topics) state.topics = {};
+  if (!state.topics[params.id]) state.topics[params.id] = {};
+  state.topics[params.id].archived = false;
+  writeJSON(STATE_FILE, state);
+  sendJSON(res, 200, { ok: true });
+}
+
+async function apiRenameTopic(req, res, params) {
+  if (!validateTopicId(params.id)) return sendJSON(res, 400, { error: 'Invalid topic ID' });
+  const body = await readBody(req);
+  if (!body.label || typeof body.label !== 'string' || !body.label.trim()) {
+    return sendJSON(res, 400, { error: 'label required' });
+  }
+  const state = readJSON(STATE_FILE);
+  if (!state.topic_names) state.topic_names = {};
+  state.topic_names[params.id] = body.label.trim();
   writeJSON(STATE_FILE, state);
   sendJSON(res, 200, { ok: true });
 }
@@ -573,6 +608,9 @@ const server = http.createServer(async (req, res) => {
       if (method === 'GET' && (params = matchRoute('/api/topics/:id/context', pathname))) return apiTopicContext(req, res, params);
       if (method === 'DELETE' && (params = matchRoute('/api/topics/:id', pathname))) return apiDeleteTopic(req, res, params);
       if (method === 'POST' && (params = matchRoute('/api/topics/:id/close', pathname))) return apiCloseTopic(req, res, params);
+      if (method === 'POST' && (params = matchRoute('/api/topics/:id/archive', pathname))) return apiArchiveTopic(req, res, params);
+      if (method === 'POST' && (params = matchRoute('/api/topics/:id/unarchive', pathname))) return apiUnarchiveTopic(req, res, params);
+      if (method === 'PUT' && (params = matchRoute('/api/topics/:id/rename', pathname))) return apiRenameTopic(req, res, params);
       if (method === 'POST' && pathname === '/api/topics/sync') return apiSyncTopics(req, res);
 
       // Schedules

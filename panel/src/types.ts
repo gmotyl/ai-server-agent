@@ -2,6 +2,7 @@ export interface Topic {
   id: string
   label: string
   active: boolean
+  archived: boolean
   provider: string
   messageCount: number
   lastActivity: string | null
