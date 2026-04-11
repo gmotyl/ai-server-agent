@@ -218,7 +218,7 @@ function apiTopics(req, res) {
 
     topics.push({
       id: String(id),
-      active: stateTopics[id]?.active !== false,
+      active: stateTopics[id]?.active === true,
       archived: stateTopics[id]?.archived === true,
       provider: topicProviders[id] || config.DEFAULT_PROVIDER || 'claude',
       messageCount: msgCount,

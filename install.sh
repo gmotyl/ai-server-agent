@@ -65,14 +65,16 @@ chmod +x "${AGENT_HOME}"/bin/*.sh "${AGENT_HOME}/start.sh"
 
 # 6. Print cron instructions
 INTERVAL="${HEARTBEAT_INTERVAL_MIN:-30}"
-CRON_LINE="*/${INTERVAL} * * * * cd ${AGENT_HOME} && flock -n data/heartbeat.lock ./start.sh --once >> logs/agent.log 2>&1"
+CRON_LINE="*/${INTERVAL} * * * * cd ${AGENT_HOME} && ./start.sh --once >> logs/agent.log 2>&1"
 
 echo ""
 echo "=== Server setup complete ==="
 echo ""
-echo "Add this line to your crontab (runs every ${INTERVAL}m with adaptive polling):"
+echo "Add this line to your crontab (watchdog — restarts agent if crashed):"
 echo ""
 echo "  ${CRON_LINE}"
+echo ""
+echo "  start.sh handles its own locking — no flock/mkdir wrapper needed."
 echo ""
 echo "On QNAP:"
 echo "  sudo vi /etc/config/crontab"

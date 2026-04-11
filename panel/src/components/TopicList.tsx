@@ -195,8 +195,8 @@ export function TopicList() {
     setTopics(prev => prev.map(t => t.id === id ? { ...t, label } : t))
   }
 
-  const activeTopics = topics.filter(t => !t.archived)
-  const archivedTopics = topics.filter(t => t.archived)
+  const activeTopics = topics.filter(t => !t.archived && t.active)
+  const archivedTopics = topics.filter(t => t.archived || !t.active)
 
   const displayedTopics = tab === 'active' ? activeTopics : archivedTopics
 

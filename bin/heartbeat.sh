@@ -68,6 +68,9 @@ for ((i=0; i<update_count; i++)); do
   # Skip if no text or no topic
   [[ -z "$msg_text" || -z "$topic_id" ]] && continue
 
+  # Mark topic as active (received a message = topic is open)
+  write_state_raw ".topics.\"${topic_id}\".active" "true"
+
   log "INFO" "Message from ${from_user} in topic ${topic_id}: ${msg_text:0:50}..."
 
   # --- 4. Handle special commands ---
