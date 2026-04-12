@@ -4,6 +4,16 @@ A provider-agnostic AI agent that runs on any Docker host (NAS, VPS, etc.), comm
 
 The bundled Docker runtime ships with Claude Code and Qwen, and runs both under a generic non-root `agent` user so interactive shell auth and Telegram execution use the same credentials.
 
+## Admin Panel
+
+A web UI for managing topics, schedules, and agent memory at runtime. Runs alongside the agent on port `3000`.
+
+- Browse and manage Telegram topics (rename, archive, sync from Telegram)
+- Create and trigger scheduled tasks
+- Edit `MEMORY.md` directly in the browser
+
+See **[panel/README.md](panel/README.md)** for setup, tab overview, and API reference.
+
 ## Quick Start (Local)
 
 1. Clone this repo
