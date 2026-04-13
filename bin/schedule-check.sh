@@ -160,7 +160,7 @@ while IFS= read -r task_json; do
   if ! $is_due; then
     if catchup_is_due "$cron_expr" "$last_run"; then
       is_due=true
-      log "INFO" "Schedule '${name}' missed its window, catching up"
+      log "INFO" "Schedule '${name}' missed its window, catching up" >&2
     fi
   fi
 
@@ -169,9 +169,9 @@ while IFS= read -r task_json; do
 
     if [[ "$last_run" != "$current_window" && "$last_run" != "$prev_window" ]]; then
       due_tasks_parts+=("$task_json")
-      log "INFO" "Schedule '${name}' is due"
+      log "INFO" "Schedule '${name}' is due" >&2
     else
-      log "INFO" "Schedule '${name}' already ran this window, skipping"
+      log "INFO" "Schedule '${name}' already ran this window, skipping" >&2
     fi
   fi
 done < <(jq -c '.[]' "$SCHEDULES_FILE")
