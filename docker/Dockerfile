@@ -10,7 +10,7 @@ RUN npm run build
 FROM node:22-slim
 
 RUN apt-get update && apt-get install -y \
-    bash curl git jq python3 \
+    bash curl git jq python3 chromium \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g pnpm
@@ -24,9 +24,11 @@ RUN mkdir -p /home/agent/.local/state/claude /home/agent/.npm-global
 RUN npm config set prefix /home/agent/.npm-global
 
 ENV PATH="/home/agent/.npm-global/bin:/home/agent/.local/bin:${PATH}"
+ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 
 RUN curl -fsSL https://claude.ai/install.sh | bash
 RUN npm install -g @qwen-code/qwen-code@latest
+RUN npm install -g agent-browser@latest
 
 # Copy built panel from stage 1
 COPY --from=panel-build --chown=agent:agent /build/dist /home/agent/panel/dist
