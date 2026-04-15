@@ -56,7 +56,15 @@ if [[ -z "$topic_id" || "$topic_id" == "null" ]]; then
   log "INFO" "Created topic ${topic_id} for schedule '${name}'"
 fi
 
-telegram_send "$topic_id" "Running scheduled task: *${name}*"
+# Send start message; recreate topic if thread is closed/deleted
+result=$(telegram_send "$topic_id" "Running scheduled task: *${name}*")
+if echo "$result" | grep -q '"ok":false'; then
+  log "WARN" "Topic ${topic_id} unreachable, creating new topic for '${name}'"
+  topic_id=$(telegram_create_topic "$topic_name")
+  write_state_raw ".schedule_topics.\"${name}\"" "$topic_id"
+  log "INFO" "Created replacement topic ${topic_id} for schedule '${name}'"
+  telegram_send "$topic_id" "Running scheduled task: *${name}*"
+fi
 
 # Build prompt with memory
 full_prompt=$(build_prompt "$topic_id" "$prompt")
