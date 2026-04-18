@@ -25,7 +25,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # --- Ensure runtime dirs and state ---
-mkdir -p "${AGENT_HOME}"/{memory/topics,data,logs}
+mkdir -p "${AGENT_HOME}"/{memory/topics,data,logs,git}
 
 if [[ ! -f "${AGENT_HOME}/data/state.json" ]]; then
   echo '{"last_update_id":0,"topics":{},"topic_providers":{},"topic_workdirs":{},"schedule_topics":{},"schedules_last_run":{}}' \

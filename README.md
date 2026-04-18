@@ -125,7 +125,7 @@ Send these in any Telegram topic:
 | `/claude` | Switch this topic and new topics to Claude |
 | `/qwen` | Switch this topic and new topics to Qwen |
 | `/close` | Deactivate this topic |
-| `/status` | List open topics and current provider |
+| `/status` | List open topics and default provider |
 
 ## License
 
