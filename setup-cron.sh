@@ -18,10 +18,16 @@ if [ "$(id -u)" = "0" ]; then
   fi
 fi
 
-# Clean up stale agent lock
-rmdir "${AGENT_HOME}/data/heartbeat.lock" 2>/dev/null || true
+# Clean up stale agent lock left behind by a crashed/killed previous run.
+# start.sh's own stale-pid reclaim only fires if it actually starts — so we
+# always clear any orphan lock here before reinstalling the cron entry.
+rm -rf "${AGENT_HOME}/data/heartbeat.lock" 2>/dev/null || true
 
-AGENT_ENTRY="*/30 * * * * mkdir -p ${AGENT_HOME}/data && mkdir ${AGENT_HOME}/data/heartbeat.lock 2>/dev/null && (export PATH=/share/CACHEDEV1_DATA/.local/bin:${CRON_PATH}:/opt/bin:\$PATH; cd ${AGENT_HOME} && ./start.sh --once >> logs/agent.log 2>&1; rmdir data/heartbeat.lock) || true"
+# Cron entry: delegate lock handling entirely to start.sh.
+# Earlier versions wrapped the call in `mkdir .../heartbeat.lock && (... ; rmdir ...)`,
+# which made the outer mkdir a silent gate: any leftover lock (reboot, SIGKILL)
+# short-circuited the && chain forever and start.sh's stale-pid reclaim never ran.
+AGENT_ENTRY="*/30 * * * * mkdir -p ${AGENT_HOME}/data && (export PATH=/share/CACHEDEV1_DATA/.local/bin:${CRON_PATH}:/opt/bin:\$PATH; cd ${AGENT_HOME} && ./start.sh --once >> logs/agent.log 2>&1) || true"
 
 NEWS_HOME=/share/CACHEDEV1_DATA/claude-news
 NEWS_CMD="/usr/local/lib/docker/cli-plugins/docker-compose -f ${NEWS_HOME}/docker-compose.yml run --rm claude-news >> ${NEWS_HOME}/logs/news.log 2>&1"

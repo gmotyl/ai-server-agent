@@ -223,7 +223,7 @@ Replace `your_user` with the non-root user who owns the agent files (e.g. the us
 
 ```bash
 sudo tee -a /etc/config/crontab << 'EOF'
-*/30 * * * * su your_user -c 'mkdir -p /share/CACHEDEV1_DATA/ai-server-agent/data && mkdir /share/CACHEDEV1_DATA/ai-server-agent/data/heartbeat.lock 2>/dev/null && (export PATH=/share/CACHEDEV1_DATA/.local/bin:/share/CACHEDEV1_DATA/.qpkg/container-station/bin:/opt/bin:$PATH; cd /share/CACHEDEV1_DATA/ai-server-agent && ./start.sh --once >> logs/agent.log 2>&1; rmdir data/heartbeat.lock) || true'
+*/30 * * * * su your_user -c 'mkdir -p /share/CACHEDEV1_DATA/ai-server-agent/data && (export PATH=/share/CACHEDEV1_DATA/.local/bin:/share/CACHEDEV1_DATA/.qpkg/container-station/bin:/opt/bin:$PATH; cd /share/CACHEDEV1_DATA/ai-server-agent && ./start.sh --once >> logs/agent.log 2>&1) || true'
 EOF
 
 sudo crontab /etc/config/crontab
@@ -231,6 +231,8 @@ sudo /etc/init.d/crond.sh restart
 ```
 
 > **Why `su your_user`:** Docker container runs as the same uid as the deployment user. Running the shell as that user ensures both write the same uid to memory files, avoiding `Permission denied` errors.
+
+> **Don't wrap the call in `mkdir heartbeat.lock && (...) ; rmdir heartbeat.lock`.** That pattern looks defensive but it's a trap: if the agent is SIGKILLed or the NAS reboots mid-heartbeat, the lock directory survives and the outer `mkdir` fails silently forever after. `start.sh` already owns the lock and has stale-pid reclaim — let it do its job.
 
 ## Troubleshooting
 
@@ -265,11 +267,13 @@ echo '{}' > ~/.docker/config.json
 
 ### Stale lock file
 
-If the agent doesn't run and `data/heartbeat.lock` directory exists:
+If the agent stops running and `data/heartbeat.lock/` exists on disk, a previous run was killed mid-heartbeat. Clear it:
 
 ```bash
-rmdir ~/ai-server-agent/data/heartbeat.lock
+rm -rf ~/ai-server-agent/data/heartbeat.lock
 ```
+
+With the current cron entry (no outer `mkdir .../heartbeat.lock` gate), `start.sh` detects stale locks via the PID file and reclaims them automatically — you should only need this command if the agent still won't run after the next scheduled fire.
 
 ## Updating
 

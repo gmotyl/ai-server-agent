@@ -101,6 +101,12 @@ for ((i=0; i<update_count; i++)); do
       telegram_send "$topic_id" "Provider set to: *qwen* (default for new topics)"
       continue
       ;;
+    /cd\ *)
+      new_workdir="${CONTAINER_GIT_DIR:-/git}/${msg_text#/cd }"
+      write_state ".topic_workdirs.\"${topic_id}\"" "${new_workdir}"
+      telegram_send "$topic_id" "Workdir set to: \`${new_workdir}\`"
+      continue
+      ;;
     /close)
       write_state_raw ".topics.\"${topic_id}\".active" "false"
       telegram_send "$topic_id" "Topic closed. Send a new message to reopen."

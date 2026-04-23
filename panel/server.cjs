@@ -50,6 +50,8 @@ const STATE_FILE = path.join(AGENT_HOME, 'data', 'state.json');
 const SCHEDULES_FILE = path.join(AGENT_HOME, 'data', 'schedules.json');
 const TOPICS_DIR = path.join(AGENT_HOME, 'memory', 'topics');
 const MEMORY_FILE = path.join(AGENT_HOME, 'memory', 'MEMORY.md');
+const MEMORY_DIR = path.join(AGENT_HOME, 'memory');
+const LOG_FILE = path.join(AGENT_HOME, 'logs', 'agent.log');
 const STATIC_DIR = path.join(__dirname, 'dist');
 
 // Second pass: reload config from canonical path (may differ if AGENT_HOME changed)
@@ -265,6 +267,43 @@ async function apiSaveMemory(req, res) {
   if (typeof body.content !== 'string') return sendJSON(res, 400, { error: 'content required' });
   fs.mkdirSync(path.dirname(MEMORY_FILE), { recursive: true });
   fs.writeFileSync(MEMORY_FILE, body.content, 'utf8');
+  sendJSON(res, 200, { ok: true });
+}
+
+function apiScheduleLogs(req, res, params) {
+  const name = decodeURIComponent(params.name);
+  const lines = 200;
+  if (!fs.existsSync(LOG_FILE)) return sendJSON(res, 200, { logs: [] });
+  const content = fs.readFileSync(LOG_FILE, 'utf8');
+  const all = content.split('\n').filter(l => l.trim());
+  // Filter lines mentioning the schedule name
+  const filtered = all.filter(l => l.includes(name));
+  const result = filtered.slice(-lines).reverse();
+  sendJSON(res, 200, { logs: result });
+}
+
+function apiGetMemoryFile(req, res, params) {
+  const filename = decodeURIComponent(params.filename);
+  // Security: only allow simple filenames (no path traversal)
+  if (filename.includes('/') || filename.includes('\\') || filename.includes('..')) {
+    return sendJSON(res, 400, { error: 'Invalid filename' });
+  }
+  const filePath = path.join(MEMORY_DIR, filename);
+  if (!filePath.startsWith(MEMORY_DIR)) return sendJSON(res, 400, { error: 'Invalid path' });
+  const content = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : '';
+  sendJSON(res, 200, { content });
+}
+
+async function apiSaveMemoryFile(req, res, params) {
+  const filename = decodeURIComponent(params.filename);
+  if (filename.includes('/') || filename.includes('\\') || filename.includes('..')) {
+    return sendJSON(res, 400, { error: 'Invalid filename' });
+  }
+  const filePath = path.join(MEMORY_DIR, filename);
+  if (!filePath.startsWith(MEMORY_DIR)) return sendJSON(res, 400, { error: 'Invalid path' });
+  const body = await readBody(req);
+  if (typeof body.content !== 'string') return sendJSON(res, 400, { error: 'content required' });
+  fs.writeFileSync(filePath, body.content, 'utf8');
   sendJSON(res, 200, { ok: true });
 }
 
@@ -619,10 +658,13 @@ const server = http.createServer(async (req, res) => {
       if (method === 'PUT' && (params = matchRoute('/api/schedules/:name', pathname))) return apiUpdateSchedule(req, res, params);
       if (method === 'DELETE' && (params = matchRoute('/api/schedules/:name', pathname))) return apiDeleteSchedule(req, res, params);
       if (method === 'POST' && (params = matchRoute('/api/schedules/:name/run', pathname))) return apiRunSchedule(req, res, params);
+      if (method === 'GET' && (params = matchRoute('/api/schedules/:name/logs', pathname))) return apiScheduleLogs(req, res, params);
 
       // Memory
       if (method === 'GET' && pathname === '/api/memory') return apiGetMemory(req, res);
       if (method === 'PUT' && pathname === '/api/memory') return apiSaveMemory(req, res);
+      if (method === 'GET' && (params = matchRoute('/api/memory/file/:filename', pathname))) return apiGetMemoryFile(req, res, params);
+      if (method === 'PUT' && (params = matchRoute('/api/memory/file/:filename', pathname))) return apiSaveMemoryFile(req, res, params);
 
       // System
       if (method === 'GET' && pathname === '/api/providers') return apiProviders(req, res);
