@@ -25,10 +25,18 @@ DEFAULT_PROVIDER="claude"
 # NOTE: Do NOT use -w {workdir} — let docker-compose.yml's working_dir take effect.
 PROVIDER_CMD_claude='"${AGENT_HOME}/bin/docker-provider.sh" claude {prompt_file}'
 PROVIDER_CMD_qwen='"${AGENT_HOME}/bin/docker-provider.sh" qwen {prompt_file}'
+PROVIDER_CMD_minimax='"${AGENT_HOME}/bin/docker-provider.sh" minimax {prompt_file}'
+PROVIDER_CMD_pickle='"${AGENT_HOME}/bin/docker-provider.sh" pickle {prompt_file}'
 #
 # Local (for testing without Docker — runs CLI directly on host):
 # PROVIDER_CMD_claude='cd {workdir} && claude --dangerously-skip-permissions -p "$(cat {prompt_file})"'
 # PROVIDER_CMD_qwen='cd {workdir} && qwen -y -p "$(cat {prompt_file})"'
+# PROVIDER_CMD_minimax='cd {workdir} && opencode run -m opencode/minimax-m2.5-free "$(cat {prompt_file})"'
+# PROVIDER_CMD_pickle='cd {workdir} && opencode run -m opencode/big-pickle "$(cat {prompt_file})"'
+#
+# Docker-mode note for opencode-backed providers:
+# After first image build + container start, run `opencode auth login` inside the
+# container once; the `agent-home` named volume persists ~/.opencode credentials.
 
 # --- Paths ---
 # IMPORTANT: use 'export' so these are visible to provider subprocesses

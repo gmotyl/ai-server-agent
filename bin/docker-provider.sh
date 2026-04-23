@@ -29,6 +29,12 @@ case "$provider" in
   qwen)
     container_cmd='qwen -y -p "$(cat)"'
     ;;
+  minimax)
+    container_cmd='opencode run -m opencode/minimax-m2.5-free "$(cat)"'
+    ;;
+  pickle)
+    container_cmd='opencode run -m opencode/big-pickle "$(cat)"'
+    ;;
   *)
     echo "Unsupported Docker provider: $provider" >&2
     exit 1

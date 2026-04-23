@@ -17,6 +17,14 @@ RUN npm install -g pnpm
 
 RUN useradd -m -s /bin/bash agent
 
+# Install opencode into /usr/local/bin (image layer — survives the agent-home volume
+# mount that shadows /home/agent). Auth lives in $HOME/.opencode at runtime,
+# which IS in the named volume, so `opencode auth login` persists.
+RUN curl -fsSL https://opencode.ai/install | bash \
+ && cp /root/.opencode/bin/opencode /usr/local/bin/opencode \
+ && chmod +x /usr/local/bin/opencode \
+ && rm -rf /root/.opencode
+
 USER agent
 WORKDIR /home/agent
 
