@@ -6,9 +6,11 @@ AGENT_HOME="${AGENT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 provider="${1:-}"
 prompt_file="${2:-}"
 workdir="${3:-/git}"
+extra="${4:-}"
 
 if [[ -z "$provider" || -z "$prompt_file" ]]; then
-  echo "Usage: $0 <provider> <prompt-file> [workdir]" >&2
+  echo "Usage: $0 <provider> <prompt-file> [workdir] [extra]" >&2
+  echo "  extra: for 'opencode' provider, the model name (e.g. opencode/minimax-m2.5-free)" >&2
   exit 1
 fi
 
@@ -30,11 +32,20 @@ case "$provider" in
   qwen)
     container_cmd='qwen -y -p "$(cat)"'
     ;;
-  minimax)
-    container_cmd='opencode run -m opencode/minimax-m2.5-free "$(cat)"'
-    ;;
-  pickle)
-    container_cmd='opencode run -m opencode/big-pickle "$(cat)"'
+  opencode)
+    # Generic opencode dispatcher: model is passed as the 4th positional arg.
+    # Add a new opencode-backed provider by adding ONE line to agent.conf:
+    #   PROVIDER_CMD_<name>='"${AGENT_HOME}/bin/docker-provider.sh" opencode {prompt_file} {workdir} opencode/<model>'
+    if [[ -z "$extra" ]]; then
+      echo "opencode provider requires a model as 4th arg (e.g. opencode/minimax-m2.5-free)" >&2
+      exit 1
+    fi
+    # Safety: model names are restricted to safe chars so they can't inject shell metachars.
+    if [[ ! "$extra" =~ ^[A-Za-z0-9_./:-]+$ ]]; then
+      echo "Invalid opencode model name: $extra" >&2
+      exit 1
+    fi
+    container_cmd="opencode run -m ${extra} \"\$(cat)\""
     ;;
   *)
     echo "Unsupported Docker provider: $provider" >&2

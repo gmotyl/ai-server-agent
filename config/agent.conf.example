@@ -23,10 +23,13 @@ DEFAULT_PROVIDER="claude"
 # NOTE: prompt is passed via stdin (-i) so no bind mount needed.
 # The temp file stays mode 600 (owner-only); Docker reads it through the pipe.
 # NOTE: Do NOT use -w {workdir} — let docker-compose.yml's working_dir take effect.
-PROVIDER_CMD_claude='"${AGENT_HOME}/bin/docker-provider.sh" claude {prompt_file}'
-PROVIDER_CMD_qwen='"${AGENT_HOME}/bin/docker-provider.sh" qwen {prompt_file}'
-PROVIDER_CMD_minimax='"${AGENT_HOME}/bin/docker-provider.sh" minimax {prompt_file}'
-PROVIDER_CMD_pickle='"${AGENT_HOME}/bin/docker-provider.sh" pickle {prompt_file}'
+PROVIDER_CMD_claude='"${AGENT_HOME}/bin/docker-provider.sh" claude {prompt_file} {workdir}'
+PROVIDER_CMD_qwen='"${AGENT_HOME}/bin/docker-provider.sh" qwen {prompt_file} {workdir}'
+#
+# opencode-backed providers — one line per model, no code changes needed.
+# Syntax: docker-provider.sh opencode {prompt_file} {workdir} <opencode-model>
+PROVIDER_CMD_minimax='"${AGENT_HOME}/bin/docker-provider.sh" opencode {prompt_file} {workdir} opencode/minimax-m2.5-free'
+PROVIDER_CMD_pickle='"${AGENT_HOME}/bin/docker-provider.sh" opencode {prompt_file} {workdir} opencode/big-pickle'
 #
 # Local (for testing without Docker — runs CLI directly on host):
 # PROVIDER_CMD_claude='cd {workdir} && claude --dangerously-skip-permissions -p "$(cat {prompt_file})"'
