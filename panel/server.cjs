@@ -222,7 +222,7 @@ function apiTopics(req, res) {
       id: String(id),
       active: stateTopics[id]?.active === true,
       archived: stateTopics[id]?.archived === true,
-      provider: topicProviders[id] || config.DEFAULT_PROVIDER || 'claude',
+      provider: topicProviders[id] || state.default_provider || config.DEFAULT_PROVIDER || 'claude',
       messageCount: msgCount,
       lastActivity,
       scheduleName,

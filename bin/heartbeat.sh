@@ -74,6 +74,20 @@ for ((i=0; i<update_count; i++)); do
   log "INFO" "Message from ${from_user} in topic ${topic_id}: ${msg_text:0:50}..."
 
   # --- 4. Handle special commands ---
+
+  # Generic /<provider> slash command: any single word after a slash that matches
+  # a PROVIDER_CMD_<name> entry in agent.conf switches the topic's provider.
+  # Fired before the case statement so new providers don't need a hardcoded branch.
+  if [[ "$msg_text" =~ ^/([A-Za-z0-9_-]+)$ ]]; then
+    candidate="${BASH_REMATCH[1]}"
+    if declare -p "PROVIDER_CMD_${candidate}" >/dev/null 2>&1; then
+      write_state ".topic_providers.\"${topic_id}\"" "${candidate}"
+      write_state ".default_provider" "${candidate}"
+      telegram_send "$topic_id" "Provider set to: *${candidate}* (default for new topics)"
+      continue
+    fi
+  fi
+
   case "$msg_text" in
     /clone\ *)
       repo_url="${msg_text#/clone }"
@@ -89,18 +103,6 @@ for ((i=0; i<update_count; i++)); do
       telegram_send "$topic_id" "Provider set to: *${new_provider}* (default for new topics)"
       continue
       ;;
-    /claude)
-      write_state ".topic_providers.\"${topic_id}\"" "claude"
-      write_state ".default_provider" "claude"
-      telegram_send "$topic_id" "Provider set to: *claude* (default for new topics)"
-      continue
-      ;;
-    /qwen)
-      write_state ".topic_providers.\"${topic_id}\"" "qwen"
-      write_state ".default_provider" "qwen"
-      telegram_send "$topic_id" "Provider set to: *qwen* (default for new topics)"
-      continue
-      ;;
     /cd\ *)
       new_workdir="${CONTAINER_GIT_DIR:-/git}/${msg_text#/cd }"
       write_state ".topic_workdirs.\"${topic_id}\"" "${new_workdir}"
@@ -113,7 +115,9 @@ for ((i=0; i<update_count; i++)); do
       continue
       ;;
     /status)
-      status_msg="Open topics: $(read_state '.topics | keys | length')\nDefault provider: ${DEFAULT_PROVIDER}"
+      current_default=$(read_state '.default_provider')
+      [[ -z "$current_default" || "$current_default" == "null" ]] && current_default="${DEFAULT_PROVIDER}"
+      status_msg="Open topics: $(read_state '.topics | keys | length')\nDefault provider: ${current_default}"
       telegram_send "$topic_id" "$status_msg"
       continue
       ;;
