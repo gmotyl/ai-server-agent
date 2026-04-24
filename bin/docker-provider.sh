@@ -25,26 +25,45 @@ else
   compose_cmd=(/usr/local/lib/docker/cli-plugins/docker-compose)
 fi
 
+# Safety check for the "extra" arg used by claude/qwen/opencode dispatchers:
+# restrict to chars that can't inject shell metachars (no $, ;, &, |, backticks…).
+validate_extra() {
+  if [[ -n "$extra" && ! "$extra" =~ ^[A-Za-z0-9_./:=,-]+(\ +[A-Za-z0-9_./:=,-]+)*$ ]]; then
+    echo "Invalid extra arg for $provider: $extra" >&2
+    exit 1
+  fi
+}
+
 case "$provider" in
   claude)
-    container_cmd='claude --dangerously-skip-permissions -p "$(cat)"'
+    # extra (optional): flags appended after --dangerously-skip-permissions,
+    # e.g. "--model claude-haiku-4-5" lets you register claude-haiku/claude-opus
+    # as separate providers without touching this script.
+    validate_extra
+    if [[ -n "$extra" ]]; then
+      container_cmd="claude --dangerously-skip-permissions ${extra} -p \"\$(cat)\""
+    else
+      container_cmd='claude --dangerously-skip-permissions -p "$(cat)"'
+    fi
     ;;
   qwen)
-    container_cmd='qwen -y -p "$(cat)"'
+    # extra (optional): additional flags (e.g. --model qwen3-coder).
+    validate_extra
+    if [[ -n "$extra" ]]; then
+      container_cmd="qwen ${extra} -y -p \"\$(cat)\""
+    else
+      container_cmd='qwen -y -p "$(cat)"'
+    fi
     ;;
   opencode)
-    # Generic opencode dispatcher: model is passed as the 4th positional arg.
-    # Add a new opencode-backed provider by adding ONE line to agent.conf:
+    # Generic opencode dispatcher: model is REQUIRED as the 4th positional arg.
+    # Adding a new opencode-backed provider is ONE line in agent.conf:
     #   PROVIDER_CMD_<name>='"${AGENT_HOME}/bin/docker-provider.sh" opencode {prompt_file} {workdir} opencode/<model>'
     if [[ -z "$extra" ]]; then
       echo "opencode provider requires a model as 4th arg (e.g. opencode/minimax-m2.5-free)" >&2
       exit 1
     fi
-    # Safety: model names are restricted to safe chars so they can't inject shell metachars.
-    if [[ ! "$extra" =~ ^[A-Za-z0-9_./:-]+$ ]]; then
-      echo "Invalid opencode model name: $extra" >&2
-      exit 1
-    fi
+    validate_extra
     container_cmd="opencode run -m ${extra} \"\$(cat)\""
     ;;
   *)

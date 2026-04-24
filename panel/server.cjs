@@ -57,7 +57,13 @@ const STATIC_DIR = path.join(__dirname, 'dist');
 // Second pass: reload config from canonical path (may differ if AGENT_HOME changed)
 function loadConfig() { return parseConfigFile(CONFIG_FILE); }
 
-const config = loadConfig();
+let config = loadConfig();
+function reloadConfig() { config = loadConfig(); }
+
+// CLIs baked into docker/Dockerfile — any other dispatcher requires the user to
+// extend the Dockerfile themselves (see docs/adding-docker-provider.md), so the
+// panel surfaces a warning when someone registers a provider that isn't in here.
+const PRECONFIGURED_DISPATCHERS = ['claude', 'qwen', 'opencode'];
 const ADMIN_TOKEN = config.ADMIN_TOKEN || process.env.ADMIN_TOKEN || '';
 const PANEL_PORT = parseInt(config.PANEL_PORT || process.env.PANEL_PORT || '3000', 10);
 
@@ -559,8 +565,116 @@ function apiRunSchedule(req, res, params) {
   sendJSON(res, 202, { ok: true, message: `Running '${params.name}' in background` });
 }
 
+// --- Provider CRUD ---
+// agent.conf lines look like:
+//   PROVIDER_CMD_<name>='"${AGENT_HOME}/bin/docker-provider.sh" <dispatcher> {prompt_file} {workdir} <extra>'
+// Panel only edits these lines — everything else in agent.conf is left untouched.
+
+const VALID_NAME_RE = /^[A-Za-z0-9_-]+$/;
+const VALID_DISPATCHER_RE = /^[A-Za-z0-9_-]+$/;
+const VALID_EXTRA_RE = /^[A-Za-z0-9_./:=, -]*$/;
+
+function buildProviderCmdValue(dispatcher, extra) {
+  const extraTrimmed = (extra || '').trim();
+  const base = `"\${AGENT_HOME}/bin/docker-provider.sh" ${dispatcher} {prompt_file} {workdir}`;
+  return `'${extraTrimmed ? `${base} ${extraTrimmed}` : base}'`;
+}
+
+function parseProviderCmdValue(rawValue) {
+  const re = /^"\$\{AGENT_HOME\}\/bin\/docker-provider\.sh"\s+(\S+)\s+\{prompt_file\}\s+\{workdir\}\s*(.*)$/;
+  const m = rawValue.match(re);
+  if (!m) return { dispatcher: 'custom', extra: rawValue, custom: true };
+  return { dispatcher: m[1], extra: m[2].trim(), custom: false };
+}
+
+function upsertProviderInConfig(name, rawValue) {
+  const content = fs.readFileSync(CONFIG_FILE, 'utf8');
+  const lines = content.split('\n');
+  const keyRe = new RegExp(`^(?:export\\s+)?PROVIDER_CMD_${name}=`);
+  let found = false;
+  const out = lines.map(line => {
+    if (keyRe.test(line.trim())) {
+      found = true;
+      return `PROVIDER_CMD_${name}=${rawValue}`;
+    }
+    return line;
+  });
+  if (!found) {
+    let insertAt = out.length;
+    for (let i = out.length - 1; i >= 0; i--) {
+      if (/^(?:export\s+)?PROVIDER_CMD_/.test(out[i].trim())) { insertAt = i + 1; break; }
+    }
+    out.splice(insertAt, 0, `PROVIDER_CMD_${name}=${rawValue}`);
+  }
+  fs.writeFileSync(CONFIG_FILE + '.tmp', out.join('\n'));
+  fs.renameSync(CONFIG_FILE + '.tmp', CONFIG_FILE);
+  reloadConfig();
+}
+
+function deleteProviderFromConfig(name) {
+  const keyRe = new RegExp(`^(?:export\\s+)?PROVIDER_CMD_${name}=`);
+  const content = fs.readFileSync(CONFIG_FILE, 'utf8');
+  const out = content.split('\n').filter(line => !keyRe.test(line.trim()));
+  fs.writeFileSync(CONFIG_FILE + '.tmp', out.join('\n'));
+  fs.renameSync(CONFIG_FILE + '.tmp', CONFIG_FILE);
+  reloadConfig();
+}
+
+function describeProvider(name) {
+  const raw = config[`PROVIDER_CMD_${name}`];
+  if (!raw) return null;
+  const parsed = parseProviderCmdValue(raw);
+  const preconfigured = !parsed.custom && PRECONFIGURED_DISPATCHERS.includes(parsed.dispatcher);
+  return {
+    name,
+    dispatcher: parsed.dispatcher,
+    extra: parsed.extra,
+    custom: parsed.custom,
+    preconfigured,
+    warning: preconfigured ? null
+      : `Dispatcher "${parsed.dispatcher}" is not in the shared Docker image. Add it to docker/Dockerfile and bin/docker-provider.sh, then rebuild — see docs/adding-docker-provider.md`,
+    command: raw,
+  };
+}
+
 function apiProviders(req, res) {
-  sendJSON(res, 200, getProviders());
+  sendJSON(res, 200, {
+    providers: getProviders().map(describeProvider).filter(Boolean),
+    preconfiguredDispatchers: PRECONFIGURED_DISPATCHERS,
+  });
+}
+
+async function apiCreateProvider(req, res) {
+  const body = await readBody(req);
+  const { name, dispatcher, extra = '' } = body || {};
+  if (!name || !VALID_NAME_RE.test(name)) return sendJSON(res, 400, { error: 'Invalid provider name' });
+  if (!dispatcher || !VALID_DISPATCHER_RE.test(dispatcher)) return sendJSON(res, 400, { error: 'Invalid dispatcher' });
+  if (extra && !VALID_EXTRA_RE.test(extra)) return sendJSON(res, 400, { error: 'Invalid extra arg (letters, digits, . _ - / : = , space only)' });
+  if (dispatcher === 'opencode' && !extra.trim()) return sendJSON(res, 400, { error: 'opencode dispatcher requires a model in "extra"' });
+  if (config[`PROVIDER_CMD_${name}`]) return sendJSON(res, 409, { error: `Provider "${name}" already exists` });
+  upsertProviderInConfig(name, buildProviderCmdValue(dispatcher, extra));
+  sendJSON(res, 200, describeProvider(name));
+}
+
+async function apiUpdateProvider(req, res, params) {
+  const name = decodeURIComponent(params.name);
+  if (!VALID_NAME_RE.test(name)) return sendJSON(res, 400, { error: 'Invalid provider name' });
+  if (!config[`PROVIDER_CMD_${name}`]) return sendJSON(res, 404, { error: 'Not found' });
+  const body = await readBody(req);
+  const { dispatcher, extra = '' } = body || {};
+  if (!dispatcher || !VALID_DISPATCHER_RE.test(dispatcher)) return sendJSON(res, 400, { error: 'Invalid dispatcher' });
+  if (extra && !VALID_EXTRA_RE.test(extra)) return sendJSON(res, 400, { error: 'Invalid extra arg' });
+  if (dispatcher === 'opencode' && !extra.trim()) return sendJSON(res, 400, { error: 'opencode dispatcher requires a model in "extra"' });
+  upsertProviderInConfig(name, buildProviderCmdValue(dispatcher, extra));
+  sendJSON(res, 200, describeProvider(name));
+}
+
+function apiDeleteProvider(req, res, params) {
+  const name = decodeURIComponent(params.name);
+  if (!VALID_NAME_RE.test(name)) return sendJSON(res, 400, { error: 'Invalid provider name' });
+  if (!config[`PROVIDER_CMD_${name}`]) return sendJSON(res, 404, { error: 'Not found' });
+  deleteProviderFromConfig(name);
+  sendJSON(res, 200, { ok: true });
 }
 
 function apiStatus(req, res) {
@@ -666,8 +780,13 @@ const server = http.createServer(async (req, res) => {
       if (method === 'GET' && (params = matchRoute('/api/memory/file/:filename', pathname))) return apiGetMemoryFile(req, res, params);
       if (method === 'PUT' && (params = matchRoute('/api/memory/file/:filename', pathname))) return apiSaveMemoryFile(req, res, params);
 
-      // System
+      // Providers
       if (method === 'GET' && pathname === '/api/providers') return apiProviders(req, res);
+      if (method === 'POST' && pathname === '/api/providers') return apiCreateProvider(req, res);
+      if (method === 'PUT' && (params = matchRoute('/api/providers/:name', pathname))) return apiUpdateProvider(req, res, params);
+      if (method === 'DELETE' && (params = matchRoute('/api/providers/:name', pathname))) return apiDeleteProvider(req, res, params);
+
+      // System
       if (method === 'GET' && pathname === '/api/status') return apiStatus(req, res);
       if (method === 'PUT' && pathname === '/api/settings') return apiUpdateSettings(req, res);
 

@@ -32,3 +32,18 @@ export interface Status {
   pollTimeout: number
   providers: string[]
 }
+
+export interface ProviderDetail {
+  name: string
+  dispatcher: string
+  extra: string
+  custom: boolean
+  preconfigured: boolean
+  warning: string | null
+  command: string
+}
+
+export interface ProvidersResponse {
+  providers: ProviderDetail[]
+  preconfiguredDispatchers: string[]
+}
