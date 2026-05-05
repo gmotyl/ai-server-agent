@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-server-agent — Architecture</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Mono', 'Fira Code', monospace; background: #0d1117; color: #c9d1d9; padding: 2rem; }
+  h1 { color: #58a6ff; font-size: 1.6rem; margin-bottom: 0.5rem; }
+  h2 { color: #79c0ff; font-size: 1.2rem; margin: 2rem 0 1rem; border-bottom: 1px solid #21262d; padding-bottom: 0.5rem; }
+  p, .note { color: #8b949e; font-size: 0.85rem; line-height: 1.6; margin-bottom: 1rem; max-width: 900px; }
+  .note { background: #161b22; border-left: 3px solid #58a6ff; padding: 0.75rem 1rem; border-radius: 0 6px 6px 0; }
+  .note.warn { border-left-color: #d29922; }
+  .note.fix { border-left-color: #3fb950; }
+  .diagram { background: #161b22; border-radius: 8px; padding: 1.5rem; margin: 1rem 0 2rem; overflow-x: auto; }
+  svg text { font-family: 'SF Mono', 'Fira Code', monospace; }
+  .subtitle { color: #8b949e; font-size: 0.9rem; margin-bottom: 2rem; }
+</style>
+</head>
+<body>
+
+<h1>ai-server-agent — Architecture</h1>
+<p class="subtitle">Provider-agnostic AI agent on QNAP NAS, communicating via Telegram</p>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>1. Main Loop</h2>
+<p>Cron fires <code>start.sh --once</code> which loops heartbeats continuously. Each heartbeat: check schedules → poll Telegram → process messages. The singleton lock prevents duplicate instances.</p>
+
+<div class="diagram">
+<svg viewBox="0 0 880 340" width="880" height="340" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background grid dots -->
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="8" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#58a6ff"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="8" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#3fb950"/>
+    </marker>
+    <marker id="arrow-orange" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="8" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#d29922"/>
+    </marker>
+  </defs>
+
+  <!-- CRON -->
+  <rect x="20" y="30" width="100" height="44" rx="6" fill="#1f2937" stroke="#30363d"/>
+  <text x="70" y="56" text-anchor="middle" fill="#8b949e" font-size="13">cron</text>
+
+  <!-- Arrow cron → start.sh -->
+  <line x1="120" y1="52" x2="168" y2="52" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- start.sh -->
+  <rect x="170" y="20" width="160" height="64" rx="6" fill="#1c2333" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="250" y="44" text-anchor="middle" fill="#58a6ff" font-size="13" font-weight="bold">start.sh --once</text>
+  <text x="250" y="62" text-anchor="middle" fill="#8b949e" font-size="11">singleton lock + loop</text>
+
+  <!-- Arrow start → heartbeat -->
+  <line x1="250" y1="84" x2="250" y2="118" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="258" y="106" fill="#484f58" font-size="10">while true</text>
+
+  <!-- HEARTBEAT BOX -->
+  <rect x="60" y="120" width="760" height="200" rx="8" fill="none" stroke="#30363d" stroke-dasharray="6,3"/>
+  <text x="75" y="142" fill="#484f58" font-size="11">heartbeat.sh (one iteration)</text>
+
+  <!-- Step 1: Schedule check -->
+  <rect x="90" y="160" width="190" height="56" rx="6" fill="#1c2333" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="185" y="183" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="bold">① schedule-check.sh</text>
+  <text x="185" y="200" text-anchor="middle" fill="#8b949e" font-size="10">cron match + catch-up</text>
+
+  <!-- Arrow 1 → 1b -->
+  <line x1="185" y1="216" x2="185" y2="248" stroke="#3fb950" stroke-width="1.2" marker-end="url(#arrow-green)"/>
+
+  <!-- Step 1b: Schedule run -->
+  <rect x="105" y="250" width="160" height="44" rx="6" fill="#1a2a1a" stroke="#3fb950" stroke-dasharray="4,2"/>
+  <text x="185" y="276" text-anchor="middle" fill="#3fb950" font-size="11">schedule-run.sh</text>
+
+  <!-- Arrow 1 → 2 -->
+  <line x1="280" y1="188" x2="338" y2="188" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 2: Telegram poll -->
+  <rect x="340" y="160" width="190" height="56" rx="6" fill="#1c2333" stroke="#d29922" stroke-width="1.5"/>
+  <text x="435" y="183" text-anchor="middle" fill="#d29922" font-size="12" font-weight="bold">② Telegram poll</text>
+  <text x="435" y="200" text-anchor="middle" fill="#8b949e" font-size="10">getUpdates (30s timeout)</text>
+
+  <!-- Arrow 2 → 3 -->
+  <line x1="530" y1="188" x2="588" y2="188" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 3: Process -->
+  <rect x="590" y="160" width="200" height="56" rx="6" fill="#1c2333" stroke="#bc8cff" stroke-width="1.5"/>
+  <text x="690" y="183" text-anchor="middle" fill="#bc8cff" font-size="12" font-weight="bold">③ Process messages</text>
+  <text x="690" y="200" text-anchor="middle" fill="#8b949e" font-size="10">dispatch to AI provider</text>
+
+  <!-- Provider boxes -->
+  <rect x="610" y="250" width="80" height="36" rx="4" fill="#1a1a2a" stroke="#bc8cff" stroke-dasharray="4,2"/>
+  <text x="650" y="273" text-anchor="middle" fill="#bc8cff" font-size="10">Claude</text>
+  <rect x="700" y="250" width="70" height="36" rx="4" fill="#1a1a2a" stroke="#bc8cff" stroke-dasharray="4,2"/>
+  <text x="735" y="273" text-anchor="middle" fill="#bc8cff" font-size="10">Qwen</text>
+
+  <line x1="660" y1="216" x2="650" y2="248" stroke="#bc8cff" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="710" y1="216" x2="730" y2="248" stroke="#bc8cff" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <!-- Loop-back arrow -->
+  <path d="M 790 188 Q 830 188 830 100 Q 830 52 330 52" fill="none" stroke="#484f58" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+  <text x="840" y="136" fill="#484f58" font-size="10" transform="rotate(-90,840,136)">sleep 1</text>
+
+  <!-- Telegram cloud -->
+  <text x="435" y="290" text-anchor="middle" fill="#d29922" font-size="20">☁</text>
+  <text x="435" y="308" text-anchor="middle" fill="#8b949e" font-size="10">Telegram API</text>
+  <line x1="435" y1="216" x2="435" y2="278" stroke="#d29922" stroke-width="1" stroke-dasharray="3,2"/>
+</svg>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>2. Schedule Check — Decision Flow</h2>
+<p>Each heartbeat checks if any scheduled task is due. Three layers: exact match, previous minute, and the new catch-up for missed windows.</p>
+
+<div class="diagram">
+<svg viewBox="0 0 880 480" width="880" height="480" xmlns="http://www.w3.org/2000/svg">
+  <!-- Start -->
+  <rect x="320" y="10" width="220" height="40" rx="20" fill="#1c2333" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="430" y="35" text-anchor="middle" fill="#58a6ff" font-size="12">schedule-check.sh starts</text>
+
+  <line x1="430" y1="50" x2="430" y2="75" stroke="#58a6ff" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+  <!-- Read schedules.json -->
+  <rect x="330" y="76" width="200" height="36" rx="6" fill="#1c2333" stroke="#30363d"/>
+  <text x="430" y="99" text-anchor="middle" fill="#c9d1d9" font-size="11">read data/schedules.json</text>
+
+  <line x1="430" y1="112" x2="430" y2="137" stroke="#58a6ff" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+  <!-- For each task -->
+  <rect x="320" y="138" width="220" height="36" rx="6" fill="#21262d" stroke="#484f58"/>
+  <text x="430" y="161" text-anchor="middle" fill="#8b949e" font-size="11">for each task in schedules…</text>
+
+  <line x1="430" y1="174" x2="430" y2="204" stroke="#58a6ff" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+  <!-- Check 1: cron matches now? -->
+  <polygon points="430,205 560,245 430,285 300,245" fill="#1c2333" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="430" y="241" text-anchor="middle" fill="#3fb950" font-size="11">cron matches</text>
+  <text x="430" y="255" text-anchor="middle" fill="#3fb950" font-size="11">NOW ± 1 min?</text>
+
+  <!-- YES from check 1 -->
+  <line x1="560" y1="245" x2="700" y2="245" stroke="#3fb950" stroke-width="1.2" marker-end="url(#arrow-green)"/>
+  <text x="620" y="238" fill="#3fb950" font-size="10">yes</text>
+
+  <!-- NO from check 1 -->
+  <line x1="430" y1="285" x2="430" y2="315" stroke="#d29922" stroke-width="1.2" marker-end="url(#arrow-orange)"/>
+  <text x="442" y="304" fill="#d29922" font-size="10">no</text>
+
+  <!-- Check 2: catch-up -->
+  <polygon points="430,316 580,356 430,396 280,356" fill="#1c2333" stroke="#d29922" stroke-width="1.5"/>
+  <text x="430" y="348" text-anchor="middle" fill="#d29922" font-size="11">catch-up: due since</text>
+  <text x="430" y="363" text-anchor="middle" fill="#d29922" font-size="11">last_run? (48h max)</text>
+
+  <!-- Label: NEW -->
+  <rect x="586" y="340" width="42" height="20" rx="4" fill="#3fb950"/>
+  <text x="607" y="354" text-anchor="middle" fill="#0d1117" font-size="10" font-weight="bold">NEW</text>
+
+  <!-- YES from check 2 -->
+  <line x1="580" y1="356" x2="700" y2="356" stroke="#3fb950" stroke-width="1.2" marker-end="url(#arrow-green)"/>
+  <text x="633" y="349" fill="#3fb950" font-size="10">yes</text>
+
+  <!-- NO from check 2 -->
+  <line x1="430" y1="396" x2="430" y2="426" stroke="#f85149" stroke-width="1.2"/>
+  <text x="442" y="416" fill="#f85149" font-size="10">no</text>
+
+  <!-- Skip -->
+  <rect x="360" y="428" width="140" height="36" rx="6" fill="#1a1215" stroke="#f85149" stroke-dasharray="4,2"/>
+  <text x="430" y="451" text-anchor="middle" fill="#f85149" font-size="11">skip (not due)</text>
+
+  <!-- Dedup check -->
+  <rect x="700" y="220" width="160" height="50" rx="6" fill="#1c2333" stroke="#58a6ff"/>
+  <text x="780" y="242" text-anchor="middle" fill="#c9d1d9" font-size="11">dedup: last_run</text>
+  <text x="780" y="258" text-anchor="middle" fill="#c9d1d9" font-size="11">≠ current window?</text>
+
+  <!-- Merge arrow from catch-up YES to dedup -->
+  <line x1="780" y1="356" x2="780" y2="270" stroke="#3fb950" stroke-width="1.2" marker-end="url(#arrow-green)"/>
+
+  <!-- Run -->
+  <line x1="780" y1="220" x2="780" y2="190" stroke="#3fb950" stroke-width="1.2" marker-end="url(#arrow-green)"/>
+  <rect x="710" y="150" width="140" height="40" rx="6" fill="#1a2a1a" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="780" y="175" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="bold">→ TASK DUE</text>
+
+  <!-- Legend -->
+  <rect x="20" y="420" width="240" height="50" rx="6" fill="#161b22" stroke="#21262d"/>
+  <line x1="35" y1="438" x2="65" y2="438" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="72" y="442" fill="#8b949e" font-size="10">existing path (±1 min window)</text>
+  <line x1="35" y1="456" x2="65" y2="456" stroke="#d29922" stroke-width="1.5"/>
+  <text x="72" y="460" fill="#8b949e" font-size="10">new catch-up path (48h lookback)</text>
+</svg>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>3. The Gap Problem (Before Fix)</h2>
+<p>The heartbeat is blocked while waiting for AI provider responses. Long responses create gaps where schedule-check doesn't run. If the gap spans the scheduled minute, the task is silently missed.</p>
+
+<div class="diagram">
+<svg viewBox="0 0 880 280" width="880" height="280" xmlns="http://www.w3.org/2000/svg">
+  <!-- Timeline axis -->
+  <line x1="40" y1="80" x2="840" y2="80" stroke="#30363d" stroke-width="1.5"/>
+
+  <!-- Time labels -->
+  <text x="40" y="100" fill="#484f58" font-size="10">08:35</text>
+  <text x="200" y="100" fill="#484f58" font-size="10">11:18</text>
+  <text x="360" y="100" fill="#484f58" font-size="10">11:32</text>
+  <text x="540" y="100" fill="#f85149" font-size="11" font-weight="bold">12:00</text>
+  <text x="700" y="100" fill="#484f58" font-size="10">13:05</text>
+  <text x="800" y="100" fill="#484f58" font-size="10">13:13</text>
+
+  <!-- Heartbeat ticks -->
+  <line x1="50" y1="70" x2="50" y2="80" stroke="#3fb950" stroke-width="3"/>
+  <line x1="210" y1="70" x2="210" y2="80" stroke="#3fb950" stroke-width="3"/>
+  <line x1="230" y1="70" x2="230" y2="80" stroke="#3fb950" stroke-width="3"/>
+  <line x1="370" y1="70" x2="370" y2="80" stroke="#3fb950" stroke-width="3"/>
+  <line x1="710" y1="70" x2="710" y2="80" stroke="#3fb950" stroke-width="3"/>
+  <line x1="810" y1="70" x2="810" y2="80" stroke="#3fb950" stroke-width="3"/>
+
+  <!-- 12:00 marker -->
+  <line x1="550" y1="40" x2="550" y2="90" stroke="#f85149" stroke-width="2" stroke-dasharray="4,2"/>
+  <text x="550" y="34" text-anchor="middle" fill="#f85149" font-size="11">cron: 0 12 * * *</text>
+
+  <!-- Gap 1 -->
+  <rect x="55" y="60" width="152" height="20" rx="4" fill="#f8514920" stroke="#f85149" stroke-dasharray="3,2"/>
+  <text x="131" y="74" text-anchor="middle" fill="#f85149" font-size="9">2h 43m gap</text>
+
+  <!-- Gap 2 — the killer -->
+  <rect x="375" y="48" width="332" height="32" rx="4" fill="#f8514940" stroke="#f85149" stroke-width="1.5"/>
+  <text x="541" y="68" text-anchor="middle" fill="#f85149" font-size="11" font-weight="bold">1h 33m gap — MISSED 12:00!</text>
+
+  <!-- Provider blocking -->
+  <rect x="230" y="110" width="140" height="30" rx="4" fill="#2a1a2a" stroke="#bc8cff" stroke-dasharray="3,2"/>
+  <text x="300" y="130" text-anchor="middle" fill="#bc8cff" font-size="10">Claude response ~6 min</text>
+  <line x1="300" y1="110" x2="300" y2="82" stroke="#bc8cff" stroke-width="1" stroke-dasharray="2,2"/>
+
+  <!-- Legend -->
+  <rect x="40" y="170" width="800" height="100" rx="8" fill="#161b22" stroke="#21262d"/>
+  <text x="60" y="194" fill="#c9d1d9" font-size="12" font-weight="bold">Why it happens:</text>
+  <text x="60" y="214" fill="#8b949e" font-size="11">• heartbeat.sh is synchronous — blocked while provider (Claude/Qwen) generates a response</text>
+  <text x="60" y="232" fill="#8b949e" font-size="11">• schedule-check runs at the START of each heartbeat, not independently</text>
+  <text x="60" y="250" fill="#8b949e" font-size="11">• old check window: only current minute ± 1 → if no heartbeat at 12:00 or 12:01, task is lost</text>
+</svg>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>4. The Catch-Up Fix</h2>
+<p>Now when a heartbeat finally runs after a gap, the catch-up scans all hours since <code>last_run</code> and detects the missed window.</p>
+
+<div class="diagram">
+<svg viewBox="0 0 880 260" width="880" height="260" xmlns="http://www.w3.org/2000/svg">
+  <!-- Timeline axis -->
+  <line x1="40" y1="80" x2="840" y2="80" stroke="#30363d" stroke-width="1.5"/>
+
+  <!-- Time labels -->
+  <text x="100" y="100" fill="#484f58" font-size="10">07:38</text>
+  <text x="540" y="100" fill="#3fb950" font-size="11" font-weight="bold">12:00</text>
+  <text x="700" y="100" fill="#484f58" font-size="10">13:05</text>
+
+  <!-- last_run marker -->
+  <line x1="110" y1="55" x2="110" y2="80" stroke="#d29922" stroke-width="2"/>
+  <text x="110" y="48" text-anchor="middle" fill="#d29922" font-size="10">last_run</text>
+
+  <!-- 12:00 hit -->
+  <line x1="550" y1="40" x2="550" y2="90" stroke="#3fb950" stroke-width="2"/>
+  <text x="550" y="34" text-anchor="middle" fill="#3fb950" font-size="11">12:00 ✓ found!</text>
+
+  <!-- Heartbeat at 13:05 -->
+  <line x1="710" y1="55" x2="710" y2="80" stroke="#58a6ff" stroke-width="3"/>
+  <text x="710" y="48" text-anchor="middle" fill="#58a6ff" font-size="10">heartbeat</text>
+
+  <!-- Scan range -->
+  <rect x="115" y="64" width="590" height="16" rx="4" fill="#3fb95020" stroke="#3fb950" stroke-width="1"/>
+  <text x="410" y="75" text-anchor="middle" fill="#3fb950" font-size="10">catch-up scans hours between last_run and now</text>
+
+  <!-- Arrow from heartbeat to scan -->
+  <path d="M 710 80 Q 710 120 560 120" fill="none" stroke="#58a6ff" stroke-width="1.2" stroke-dasharray="4,2" marker-end="url(#arrow)"/>
+  <text x="650" y="124" fill="#58a6ff" font-size="10">catchup_is_due()</text>
+
+  <!-- Algorithm box -->
+  <rect x="60" y="150" width="760" height="100" rx="8" fill="#161b22" stroke="#21262d"/>
+  <text x="80" y="174" fill="#c9d1d9" font-size="12" font-weight="bold">Algorithm (efficient — iterates hours, not minutes):</text>
+  <text x="80" y="196" fill="#3fb950" font-size="11">1. Convert last_run → epoch, get now → epoch</text>
+  <text x="80" y="214" fill="#3fb950" font-size="11">2. For each HOUR in [last_run … now]: does cron hour/dom/mon/dow match?</text>
+  <text x="80" y="232" fill="#3fb950" font-size="11">3. If hour matches → check if cron minute falls within that hour after last_run</text>
+  <text x="560" y="174" fill="#8b949e" font-size="11">≤48 date calls (vs 2880 per-minute)</text>
+</svg>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>5. File Map</h2>
+<div class="diagram">
+<svg viewBox="0 0 880 320" width="880" height="320" xmlns="http://www.w3.org/2000/svg">
+  <!-- Root -->
+  <text x="30" y="30" fill="#58a6ff" font-size="13" font-weight="bold">ai-server-agent/</text>
+
+  <!-- start.sh -->
+  <rect x="40" y="46" width="240" height="32" rx="4" fill="#1c2333" stroke="#58a6ff"/>
+  <text x="50" y="67" fill="#58a6ff" font-size="11">start.sh</text>
+  <text x="170" y="67" fill="#484f58" font-size="10">entry point, lock, loop</text>
+
+  <!-- bin/ -->
+  <text x="40" y="102" fill="#79c0ff" font-size="12">bin/</text>
+  <rect x="60" y="112" width="280" height="32" rx="4" fill="#1c2333" stroke="#3fb950"/>
+  <text x="70" y="133" fill="#3fb950" font-size="11">heartbeat.sh</text>
+  <text x="190" y="133" fill="#484f58" font-size="10">orchestrator per beat</text>
+
+  <rect x="60" y="150" width="280" height="32" rx="4" fill="#1c2333" stroke="#3fb950"/>
+  <text x="70" y="171" fill="#3fb950" font-size="11">schedule-check.sh</text>
+  <text x="210" y="171" fill="#484f58" font-size="10">cron eval + catch-up</text>
+
+  <rect x="60" y="188" width="280" height="32" rx="4" fill="#1c2333" stroke="#30363d"/>
+  <text x="70" y="209" fill="#c9d1d9" font-size="11">schedule-run.sh</text>
+  <text x="205" y="209" fill="#484f58" font-size="10">execute one task</text>
+
+  <!-- lib/ -->
+  <text x="400" y="102" fill="#79c0ff" font-size="12">lib/</text>
+  <rect x="420" y="112" width="200" height="28" rx="4" fill="#1c2333" stroke="#30363d"/>
+  <text x="430" y="131" fill="#8b949e" font-size="11">utils.sh — state, config, log</text>
+  <rect x="420" y="146" width="200" height="28" rx="4" fill="#1c2333" stroke="#30363d"/>
+  <text x="430" y="165" fill="#8b949e" font-size="11">telegram.sh — Bot API</text>
+  <rect x="420" y="180" width="200" height="28" rx="4" fill="#1c2333" stroke="#30363d"/>
+  <text x="430" y="199" fill="#8b949e" font-size="11">provider.sh — AI dispatch</text>
+  <rect x="420" y="214" width="200" height="28" rx="4" fill="#1c2333" stroke="#30363d"/>
+  <text x="430" y="233" fill="#8b949e" font-size="11">memory.sh — topic context</text>
+
+  <!-- data/ -->
+  <text x="680" y="102" fill="#79c0ff" font-size="12">data/</text>
+  <rect x="700" y="112" width="160" height="28" rx="4" fill="#1c2333" stroke="#d29922"/>
+  <text x="710" y="131" fill="#d29922" font-size="11">state.json</text>
+  <rect x="700" y="146" width="160" height="28" rx="4" fill="#1c2333" stroke="#d29922"/>
+  <text x="710" y="165" fill="#d29922" font-size="11">schedules.json</text>
+  <rect x="700" y="180" width="160" height="28" rx="4" fill="#1c2333" stroke="#30363d"/>
+  <text x="710" y="199" fill="#8b949e" font-size="11">heartbeat.lock/</text>
+
+  <!-- config + docker -->
+  <text x="40" y="248" fill="#79c0ff" font-size="12">config/</text>
+  <rect x="60" y="258" width="200" height="28" rx="4" fill="#1c2333" stroke="#30363d"/>
+  <text x="70" y="277" fill="#8b949e" font-size="11">agent.conf — tokens, paths</text>
+
+  <text x="320" y="248" fill="#79c0ff" font-size="12">docker/</text>
+  <rect x="340" y="258" width="120" height="28" rx="4" fill="#1c2333" stroke="#bc8cff"/>
+  <text x="350" y="277" fill="#bc8cff" font-size="11">claude/</text>
+  <rect x="470" y="258" width="120" height="28" rx="4" fill="#1c2333" stroke="#bc8cff"/>
+  <text x="480" y="277" fill="#bc8cff" font-size="11">qwen/</text>
+
+  <text x="640" y="248" fill="#79c0ff" font-size="12">panel/</text>
+  <rect x="660" y="258" width="200" height="28" rx="4" fill="#1c2333" stroke="#30363d"/>
+  <text x="670" y="277" fill="#8b949e" font-size="11">server.cjs + React admin UI</text>
+</svg>
+</div>
+
+<div class="note fix">
+<strong>Fix deployed 2026-04-13:</strong> <code>catchup_is_due()</code> in schedule-check.sh scans hours since last_run.
+If the agent was down or busy when a task was due, the very next heartbeat catches up and runs it.
+Confirmed: generate-news fired at 22:14 after missing 12:00 — completed successfully.
+</div>
+
+</body>
+</html>

@@ -206,8 +206,12 @@ export function Settings() {
                       )}
                     </div>
                     <div className="flex gap-1.5 shrink-0">
-                      <button className="icon-btn" onClick={() => openEdit(p)} title="Edit">Edit</button>
-                      <button className="icon-btn danger" onClick={() => remove(p.name)} title="Delete">Delete</button>
+                      <button className="icon-btn" onClick={() => openEdit(p)} title="Edit" aria-label="Edit">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Z" stroke="currentColor" strokeWidth="1.2" fill="none" /></svg>
+                      </button>
+                      <button className="icon-btn danger" onClick={() => remove(p.name)} title="Delete" aria-label="Delete">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 0 1 1.34-1.34h2.66a1.33 1.33 0 0 1 1.34 1.34V4M12 4v9.33a1.33 1.33 0 0 1-1.33 1.34H5.33A1.33 1.33 0 0 1 4 13.33V4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                      </button>
                     </div>
                   </div>
                 </div>
