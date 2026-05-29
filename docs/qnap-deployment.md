@@ -199,7 +199,7 @@ Set `GIT_DIR` to the host repo root and `CONTAINER_GIT_DIR="/git"` to the in-con
 ### 6. Set permissions and initialize
 
 ```bash
-chmod +x bin/*.sh start.sh
+chmod +x bin/*.sh start.sh setup-cron.sh
 mkdir -p memory/topics data logs
 ```
 
@@ -215,24 +215,41 @@ bash bin/heartbeat.sh
 
 Send a message in a Telegram topic. The agent should respond within seconds.
 
-### 8. Set up cron
+### 8. Register the heartbeat cron (and make it survive reboots)
 
-Add entries to `/etc/config/crontab` using `su your_user` so the agent runs as the deployment user. This survives reboots reliably without timing issues.
-
-Replace `your_user` with the non-root user who owns the agent files (e.g. the user you SSH in as):
+One command does everything — registers the `*/30` watchdog that (re)starts the agent, enables QNAP autorun, and wires `autorun.sh` so the cron is re-created after every reboot:
 
 ```bash
-sudo tee -a /etc/config/crontab << 'EOF'
-*/30 * * * * su your_user -c 'mkdir -p /share/CACHEDEV1_DATA/ai-server-agent/data && (export PATH=/share/CACHEDEV1_DATA/.local/bin:/share/CACHEDEV1_DATA/.qpkg/container-station/bin:/opt/bin:$PATH; cd /share/CACHEDEV1_DATA/ai-server-agent && ./start.sh --once >> logs/agent.log 2>&1) || true'
-EOF
-
-sudo crontab /etc/config/crontab
-sudo /etc/init.d/crond.sh restart
+sudo bash /share/CACHEDEV1_DATA/ai-server-agent/setup-cron.sh
 ```
 
-> **Why `su your_user`:** Docker container runs as the same uid as the deployment user. Running the shell as that user ensures both write the same uid to memory files, avoiding `Permission denied` errors.
+What it does (all idempotent — safe to re-run):
 
-> **Don't wrap the call in `mkdir heartbeat.lock && (...) ; rmdir heartbeat.lock`.** That pattern looks defensive but it's a trap: if the agent is SIGKILLed or the NAS reboots mid-heartbeat, the lock directory survives and the outer `mkdir` fails silently forever after. `start.sh` already owns the lock and has stale-pid reclaim — let it do its job.
+- Writes the heartbeat entry to `/tmp/cron/crontabs/<user>` (the user who owns the agent files) and restarts crond:
+  ```
+  */30 * * * * mkdir -p .../data && (export PATH=…; cd … && ./start.sh --once >> logs/agent.log 2>&1) || true
+  ```
+- `setcfg Misc Autorun TRUE` — enables QTS **"Run user defined processes during startup"**.
+- Appends `bash .../setup-cron.sh` to `/etc/config/autorun.sh` so the cron is re-registered at boot.
+- Clears any stale `data/heartbeat.lock` from a crashed/SIGKILLed/rebooted run.
+
+> **Why `/tmp/cron/crontabs/<user>` + autorun, not `/etc/config/crontab`:** crond runs each file under `/tmp/cron/crontabs` as that named user, so the agent (and the Docker container it spawns) run as the file owner — same uid that owns `memory/`, avoiding `Permission denied`. `/tmp` is wiped on reboot, so autorun re-runs `setup-cron.sh` to recreate it.
+
+> **The `bash` prefix in autorun.sh is mandatory.** The script may not carry the execute bit on the data share (the bit isn't reliably preserved across `git pull`/`rsync`/`scp`), so a direct `/share/.../setup-cron.sh` at boot dies with `Permission denied`. Calling it via `bash` is immune to that.
+
+> **Never wrap the cron call in `mkdir heartbeat.lock && (...) ; rmdir heartbeat.lock`.** That pattern looks defensive but it's a trap: if the agent is SIGKILLed or the NAS reboots mid-heartbeat, the lock directory survives and the outer `mkdir` fails silently forever after. `start.sh` already owns the lock and reclaims stale ones by PID — let it do its job.
+
+> **News generation is the soft cron, not a system crontab entry.** It lives in `data/schedules.json` (`generate-news`, `0 12 * * *`) and is evaluated by the heartbeat. Do **not** add a hardcoded news entry to the system crontab.
+
+Verify it's wired correctly **without rebooting**:
+
+```bash
+AGENT_USER=$(stat -c %U /share/CACHEDEV1_DATA/ai-server-agent)
+cat /tmp/cron/crontabs/$AGENT_USER     # heartbeat line present
+getcfg Misc Autorun                    # TRUE
+grep setup-cron.sh /etc/config/autorun.sh   # bash .../setup-cron.sh
+sh /etc/config/autorun.sh              # "All cron entries already active, nothing to do."
+```
 
 ## Troubleshooting
 
@@ -265,15 +282,51 @@ mkdir -p ~/.docker
 echo '{}' > ~/.docker/config.json
 ```
 
-### Stale lock file
+### Agent doesn't start after a reboot
 
-If the agent stops running and `data/heartbeat.lock/` exists on disk, a previous run was killed mid-heartbeat. Clear it:
+Symptoms: panel (`:3000`) unreachable, no new lines in `logs/agent.log`, and `/tmp/cron/crontabs/<user>` missing.
+
+Root cause is almost always the reboot-persistence wiring (the cron lives in volatile `/tmp` and is only recreated by autorun → `setup-cron.sh`). Check both halves:
 
 ```bash
-rm -rf ~/ai-server-agent/data/heartbeat.lock
+getcfg Misc Autorun                        # must be TRUE
+grep setup-cron.sh /etc/config/autorun.sh  # must be:  bash .../setup-cron.sh
+```
+
+If either is wrong, just re-run the setup — it fixes both and is idempotent:
+
+```bash
+sudo bash /share/CACHEDEV1_DATA/ai-server-agent/setup-cron.sh
+```
+
+To restore service immediately (without waiting for the next `*/30` fire), launch the agent by hand — note QNAP's BusyBox has **no `nohup`; use `setsid`**:
+
+```bash
+cd /share/CACHEDEV1_DATA/ai-server-agent
+setsid bash ./start.sh < /dev/null >> logs/agent.log 2>&1 &
+```
+
+### Stale lock file
+
+If the agent stops running and `data/heartbeat.lock/` exists on disk, a previous run was killed mid-heartbeat (or the NAS rebooted mid-run). `setup-cron.sh` clears it on every run; to clear it by hand:
+
+```bash
+rm -rf /share/CACHEDEV1_DATA/ai-server-agent/data/heartbeat.lock
 ```
 
 With the current cron entry (no outer `mkdir .../heartbeat.lock` gate), `start.sh` detects stale locks via the PID file and reclaims them automatically — you should only need this command if the agent still won't run after the next scheduled fire.
+
+### A provider task hangs for hours / wedges the agent
+
+Provider runs currently execute **without a timeout** (`bin/docker-provider.sh` logs `No timeout/gtimeout found, running without timeout`). A stuck `claude`/`qwen` run holds the singleton lock, so every later heartbeat skips and the agent appears dead. Until a timeout guard is added, recover with:
+
+```bash
+docker ps                                    # find the long-running ai-agent run container
+docker stop <container>                      # stop the hung provider
+rm -rf /share/CACHEDEV1_DATA/ai-server-agent/data/heartbeat.lock
+```
+
+The next `*/30` heartbeat (or a manual `setsid bash ./start.sh &`) then resumes; the schedule catch-up re-runs any window that was missed while it was wedged.
 
 ## Updating
 

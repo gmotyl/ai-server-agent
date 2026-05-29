@@ -61,25 +61,25 @@ fi
 touch "${AGENT_HOME}/memory/MEMORY.md"
 
 # 5. Make scripts executable
-chmod +x "${AGENT_HOME}"/bin/*.sh "${AGENT_HOME}/start.sh"
+chmod +x "${AGENT_HOME}"/bin/*.sh "${AGENT_HOME}/start.sh" "${AGENT_HOME}/setup-cron.sh"
 
-# 6. Print cron instructions
-INTERVAL="${HEARTBEAT_INTERVAL_MIN:-30}"
-CRON_LINE="*/${INTERVAL} * * * * cd ${AGENT_HOME} && ./start.sh --once >> logs/agent.log 2>&1"
-
+# 6. Register the heartbeat cron + QNAP reboot persistence
 echo ""
+if [[ "$(id -u)" == "0" ]]; then
+  echo "Registering heartbeat cron + reboot persistence (setup-cron.sh)..."
+  bash "${AGENT_HOME}/setup-cron.sh"
+else
+  echo "=== Almost done — register the cron as root ==="
+  echo ""
+  echo "Run this once. It installs the */30 heartbeat watchdog and makes it survive"
+  echo "reboots (enables QNAP autorun, wires autorun.sh via bash, clears stale locks):"
+  echo ""
+  echo "  sudo bash ${AGENT_HOME}/setup-cron.sh"
+  echo ""
+fi
+
 echo "=== Server setup complete ==="
-echo ""
-echo "Add this line to your crontab (watchdog — restarts agent if crashed):"
-echo ""
-echo "  ${CRON_LINE}"
-echo ""
-echo "  start.sh handles its own locking — no flock/mkdir wrapper needed."
-echo ""
-echo "On QNAP:"
-echo "  sudo vi /etc/config/crontab"
-echo "  sudo crontab /etc/config/crontab"
-echo "  sudo /etc/init.d/crond.sh restart"
-echo ""
-echo "Or run locally: ./start.sh"
+echo "  - Heartbeat: */30 start.sh --once  (start.sh owns its own lock — no mkdir gate)"
+echo "  - News:      soft cron only — data/schedules.json (generate-news, 0 12 * * *)"
+echo "  - Manual:    ./start.sh  (interactive, Ctrl+C to stop)"
 echo ""
