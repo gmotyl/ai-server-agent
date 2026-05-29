@@ -17,3 +17,7 @@ panel/tsconfig.tsbuildinfo
 
 # Docker Compose — local config with host-specific paths (use docker/docker-compose.example.yml as template)
 docker/docker-compose.yml
+
+# Local tooling
+node_modules/
+.opencode/
