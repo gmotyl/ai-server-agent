@@ -1,5 +1,7 @@
 #!/bin/sh
-# setup-cron.sh — register gomes cron jobs (agent heartbeat + news generation)
+# setup-cron.sh — register the gomes agent-heartbeat cron job.
+# News generation is handled by the soft cron (data/schedules.json: generate-news,
+# 0 12 * * *), evaluated by the heartbeat — NOT by a hardcoded system crontab entry.
 # Safe to call as root (from autorun.sh) or as gomes directly.
 #
 # Add to /etc/config/autorun.sh for reboot persistence (run once as admin):
@@ -29,11 +31,6 @@ rm -rf "${AGENT_HOME}/data/heartbeat.lock" 2>/dev/null || true
 # short-circuited the && chain forever and start.sh's stale-pid reclaim never ran.
 AGENT_ENTRY="*/30 * * * * mkdir -p ${AGENT_HOME}/data && (export PATH=/share/CACHEDEV1_DATA/.local/bin:${CRON_PATH}:/opt/bin:\$PATH; cd ${AGENT_HOME} && ./start.sh --once >> logs/agent.log 2>&1) || true"
 
-NEWS_HOME=/share/CACHEDEV1_DATA/claude-news
-NEWS_CMD="/usr/local/lib/docker/cli-plugins/docker-compose -f ${NEWS_HOME}/docker-compose.yml run --rm claude-news >> ${NEWS_HOME}/logs/news.log 2>&1"
-NEWS_ENTRY_AM="0 9 * * * ${NEWS_CMD}"
-NEWS_ENTRY_PM="0 21 * * * ${NEWS_CMD}"
-
 changed=0
 
 add_if_missing() {
@@ -47,8 +44,6 @@ add_if_missing() {
 }
 
 add_if_missing "ai-server-agent"  "$AGENT_ENTRY"
-add_if_missing "9 * * * * /usr/local"  "$NEWS_ENTRY_AM"
-add_if_missing "21 * * * * /usr/local" "$NEWS_ENTRY_PM"
 
 if [ "$changed" = "1" ]; then
   /etc/init.d/crond.sh restart 2>/dev/null || true
