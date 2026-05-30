@@ -336,7 +336,9 @@ With the current cron entry (no outer `mkdir .../heartbeat.lock` gate), `start.s
 
 ### A provider task hangs for hours / wedges the agent
 
-Provider runs currently execute **without a timeout** (`bin/docker-provider.sh` logs `No timeout/gtimeout found, running without timeout`). A stuck `claude`/`qwen` run holds the singleton lock, so every later heartbeat skips and the agent appears dead. Until a timeout guard is added, recover with:
+Each provider run is hard-capped by `PROVIDER_TIMEOUT_SEC` (default 3600s), enforced **inside the container** by `timeout` in `bin/docker-provider.sh`. When it fires, `claude`/`qwen` is killed, the `--rm` container is reaped, and exit code 124 is reported as a timeout — so a hung run can no longer hold the singleton lock and wedge the agent.
+
+If a run still appears stuck (e.g. an old container from before this guard, or a wedged compose client), recover manually:
 
 ```bash
 docker ps                                    # find the long-running ai-agent run container
@@ -344,7 +346,7 @@ docker stop <container>                      # stop the hung provider
 rm -rf /share/CACHEDEV1_DATA/ai-server-agent/data/heartbeat.lock
 ```
 
-The next `*/30` heartbeat (or a manual `setsid bash ./start.sh &`) then resumes; the schedule catch-up re-runs any window that was missed while it was wedged.
+The next `*/30` heartbeat (or a manual `setsid bash ./start.sh &`) then resumes; the schedule catch-up re-runs any window that was missed while it was wedged. To tune the cap, set `PROVIDER_TIMEOUT_SEC` in `config/agent.conf`.
 
 ## Updating
 
