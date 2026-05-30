@@ -286,14 +286,17 @@ echo '{}' > ~/.docker/config.json
 
 Symptoms: panel (`:3000`) unreachable, no new lines in `logs/agent.log`, and `/tmp/cron/crontabs/<user>` missing.
 
-Root cause is almost always the reboot-persistence wiring (the cron lives in volatile `/tmp` and is only recreated by autorun → `setup-cron.sh`). Check both halves:
+Root cause is almost always the reboot-persistence wiring (the cron lives in volatile `/tmp` and is only recreated by autorun → `setup-cron.sh`). Check all three:
 
 ```bash
 getcfg Misc Autorun                        # must be TRUE
+ls -l /etc/config/autorun.sh               # must be executable (-rwxr-xr-x) with a #!/bin/sh shebang
 grep setup-cron.sh /etc/config/autorun.sh  # must be:  bash .../setup-cron.sh
 ```
 
-If either is wrong, just re-run the setup — it fixes both and is idempotent:
+> **`autorun.sh` must be executable AND start with a shebang** — QNAP silently skips it at boot otherwise (a non-executable `autorun.sh` is the sneakiest version of this failure: autorun is "enabled" but the script never runs). `setup-cron.sh` enforces both on every run.
+
+If any are wrong, just re-run the setup — it fixes all of them and is idempotent:
 
 ```bash
 sudo bash /share/CACHEDEV1_DATA/ai-server-agent/setup-cron.sh
@@ -305,6 +308,21 @@ To restore service immediately (without waiting for the next `*/30` fire), launc
 cd /share/CACHEDEV1_DATA/ai-server-agent
 setsid bash ./start.sh < /dev/null >> logs/agent.log 2>&1 &
 ```
+
+### After a reboot: SSH key rejected / home dir gone / `cd` fails
+
+If after a reboot SSH **public-key auth is rejected**, `cd` (→ `$HOME`) fails, and `/share/homes/<user>` is missing — this is **not data loss**. The QNAP **Home Folders** feature came up disabled, so `/share/homes` isn't linked and `~/.ssh/authorized_keys` can't be read.
+
+Confirm the data volume is actually fine first:
+
+```bash
+df -h | grep CACHEDEV1_DATA   # mounted, with your data
+cat /proc/mdstat              # data array shows [UU] (healthy), not a failed/resyncing disk
+```
+
+Then re-enable it: **QTS → Control Panel → Privilege → Users → Home Folders → Enable → select CACHEDEV1_DATA → Apply.** `/share/homes/<user>` (and your `~/.ssh`) returns.
+
+The **agent itself does not need the home dir** — it runs from `/share/CACHEDEV1_DATA/ai-server-agent` and stores provider credentials in the `agent-home` Docker volume, so you can start it (and it auto-starts via cron) even while Home Folders is off.
 
 ### Stale lock file
 
