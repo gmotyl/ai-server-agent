@@ -34,8 +34,13 @@ if [ "$IS_ROOT" = "1" ] && [ -d /etc/config ]; then
       setcfg Misc Autorun TRUE && echo "Enabled QNAP autorun (Misc/Autorun=TRUE)."
     fi
   fi
-  # (b) wire autorun.sh to call this script via bash (idempotent)
-  [ -f "$AUTORUN" ] || { printf '#!/bin/sh\n' > "$AUTORUN"; chmod +x "$AUTORUN"; }
+  # (b) wire autorun.sh to call this script via bash (idempotent).
+  #     QNAP only runs autorun.sh at boot if it is executable AND has a shebang,
+  #     so we enforce both every time — not just when creating the file.
+  [ -f "$AUTORUN" ] || printf '#!/bin/sh\n' > "$AUTORUN"
+  if ! head -n 1 "$AUTORUN" | grep -q '^#!'; then
+    { printf '#!/bin/sh\n'; cat "$AUTORUN"; } > "${AUTORUN}.tmp" && mv "${AUTORUN}.tmp" "$AUTORUN"
+  fi
   AUTORUN_LINE="bash ${AGENT_HOME}/setup-cron.sh"
   if ! grep -qF "$AUTORUN_LINE" "$AUTORUN" 2>/dev/null; then
     # drop any older (possibly non-bash, exec-bit-dependent) reference first
@@ -43,6 +48,7 @@ if [ "$IS_ROOT" = "1" ] && [ -d /etc/config ]; then
     echo "$AUTORUN_LINE" >> "$AUTORUN"
     echo "Wired autorun.sh to run setup-cron.sh via bash at boot."
   fi
+  chmod +x "$AUTORUN"   # QNAP skips autorun.sh at boot if it isn't executable
   # create the per-user crontab file if missing (crond reads it as $AGENT_USER)
   if [ ! -f "$ACTIVE_CRONTAB" ]; then
     mkdir -p /tmp/cron/crontabs
