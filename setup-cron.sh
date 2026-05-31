@@ -56,6 +56,25 @@ if [ "$IS_ROOT" = "1" ] && [ -d /etc/config ]; then
     chown "$AGENT_USER" "$ACTIVE_CRONTAB"
     chmod 600 "$ACTIVE_CRONTAB"
   fi
+
+  # (c) HARD-CRON FALLBACK — persistent watchdog in /etc/config/crontab.
+  #     autorun.sh can fire BEFORE /share/CACHEDEV1_DATA is mounted (early boot),
+  #     so `bash .../setup-cron.sh` silently no-ops and the cron never registers
+  #     (observed across reboots even with autorun=TRUE + correct autorun.sh).
+  #     /etc/config/crontab is loaded by QTS AFTER the volume mounts and fires on a
+  #     schedule, so a */10 watchdog here reliably revives the agent (panel + soft
+  #     cron) within 10 min of any reboot, independent of autorun timing. start.sh's
+  #     singleton lock makes it a no-op while the agent is already running, and
+  #     `su` runs it as the agent user (correct uid for the Docker container/files).
+  SYS_CRONTAB=/etc/config/crontab
+  WATCHDOG_MARK="${AGENT_HOME} && ./start.sh --once"
+  WATCHDOG="*/10 * * * * su ${AGENT_USER} -c 'mkdir -p ${AGENT_HOME}/data && (export PATH=/share/CACHEDEV1_DATA/.local/bin:${CRON_PATH}:/opt/bin:\$PATH; cd ${AGENT_HOME} && ./start.sh --once >> logs/agent.log 2>&1) || true'"
+  if [ -f "$SYS_CRONTAB" ] && ! grep -qF "$WATCHDOG_MARK" "$SYS_CRONTAB" 2>/dev/null; then
+    echo "$WATCHDOG" >> "$SYS_CRONTAB"
+    crontab "$SYS_CRONTAB" 2>/dev/null || true
+    echo "Installed persistent hard-cron watchdog (*/10) in ${SYS_CRONTAB}."
+    NEED_CROND_RESTART=1
+  fi
 fi
 
 # Keep this script executable so a direct ./setup-cron.sh also works.
@@ -85,7 +104,7 @@ add_if_missing() {
 
 add_if_missing "ai-server-agent" "$AGENT_ENTRY"
 
-if [ "$changed" = "1" ]; then
+if [ "$changed" = "1" ] || [ "${NEED_CROND_RESTART:-0}" = "1" ]; then
   /etc/init.d/crond.sh restart 2>/dev/null || true
   echo "crond restarted."
 else

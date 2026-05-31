@@ -225,15 +225,18 @@ sudo bash /share/CACHEDEV1_DATA/ai-server-agent/setup-cron.sh
 
 What it does (all idempotent — safe to re-run):
 
-- Writes the heartbeat entry to `/tmp/cron/crontabs/<user>` (the user who owns the agent files) and restarts crond:
+- **Hard-cron fallback (the reliable one):** appends a `*/10` watchdog to the **persistent** `/etc/config/crontab` that runs `start.sh --once` as the agent user:
   ```
-  */30 * * * * mkdir -p .../data && (export PATH=…; cd … && ./start.sh --once >> logs/agent.log 2>&1) || true
+  */10 * * * * su <user> -c '… cd /share/.../ai-server-agent && ./start.sh --once >> logs/agent.log 2>&1 || true'
   ```
-- `setcfg Misc Autorun TRUE` — enables QTS **"Run user defined processes during startup"**.
-- Appends `bash .../setup-cron.sh` to `/etc/config/autorun.sh` so the cron is re-registered at boot.
+  QTS loads `/etc/config/crontab` **after** the data volume mounts, so this fires reliably after any reboot and revives the agent (panel + soft cron) within 10 min. `start.sh --once` is an infinite loop guarded by a singleton lock, so the watchdog is a no-op while the agent is already running and self-heals if it dies.
+- Writes a `*/30` heartbeat to `/tmp/cron/crontabs/<user>` and restarts crond (fast path; same `start.sh --once`).
+- `setcfg Misc Autorun TRUE` + appends `bash .../setup-cron.sh` to `/etc/config/autorun.sh` (best-effort re-registration at boot).
 - Clears any stale `data/heartbeat.lock` from a crashed/SIGKILLed/rebooted run.
 
-> **Why `/tmp/cron/crontabs/<user>` + autorun, not `/etc/config/crontab`:** crond runs each file under `/tmp/cron/crontabs` as that named user, so the agent (and the Docker container it spawns) run as the file owner — same uid that owns `memory/`, avoiding `Permission denied`. `/tmp` is wiped on reboot, so autorun re-runs `setup-cron.sh` to recreate it.
+> **Why the hard-cron fallback exists:** `autorun.sh` can run **before `/share/CACHEDEV1_DATA` is mounted** during early boot — then `bash .../setup-cron.sh` hits "no such file" and silently does nothing, so the `/tmp` cron is never recreated (observed across reboots even with `autorun=TRUE` and a correct `autorun.sh`). The persistent `/etc/config/crontab` watchdog fires on a schedule *after* the volume is mounted, so it doesn't depend on autorun timing. The two mechanisms coexist via the singleton lock.
+
+> **Why `su <user>`:** crond runs `/etc/config/crontab` as root; `su <user>` drops to the agent's owner so the agent (and the Docker container it spawns) run with the uid that owns `memory/`/`data/`, avoiding `Permission denied`. `/tmp/cron/crontabs/<user>` entries already run as `<user>` natively.
 
 > **The `bash` prefix in autorun.sh is mandatory.** The script may not carry the execute bit on the data share (the bit isn't reliably preserved across `git pull`/`rsync`/`scp`), so a direct `/share/.../setup-cron.sh` at boot dies with `Permission denied`. Calling it via `bash` is immune to that.
 
@@ -244,11 +247,11 @@ What it does (all idempotent — safe to re-run):
 Verify it's wired correctly **without rebooting**:
 
 ```bash
+grep "start.sh --once" /etc/config/crontab   # hard-cron watchdog present (the reliable one)
 AGENT_USER=$(stat -c %U /share/CACHEDEV1_DATA/ai-server-agent)
-cat /tmp/cron/crontabs/$AGENT_USER     # heartbeat line present
+cat /tmp/cron/crontabs/$AGENT_USER     # fast-path heartbeat line present
 getcfg Misc Autorun                    # TRUE
 grep setup-cron.sh /etc/config/autorun.sh   # bash .../setup-cron.sh
-sh /etc/config/autorun.sh              # "All cron entries already active, nothing to do."
 ```
 
 ## Troubleshooting
@@ -286,7 +289,15 @@ echo '{}' > ~/.docker/config.json
 
 Symptoms: panel (`:3000`) unreachable, no new lines in `logs/agent.log`, and `/tmp/cron/crontabs/<user>` missing.
 
-Root cause is almost always the reboot-persistence wiring (the cron lives in volatile `/tmp` and is only recreated by autorun → `setup-cron.sh`). Check all three:
+First check the **hard-cron fallback** — it's the mechanism that's supposed to survive reboots regardless of autorun timing:
+
+```bash
+grep "start.sh --once" /etc/config/crontab   # the */10 su <user> watchdog must be here
+```
+
+If it's missing, re-run `sudo bash setup-cron.sh` (it installs it). If it's present but the agent is still down >10 min after boot, check that crond loaded it: `cat /tmp/cron/crontabs/admin | grep start.sh`.
+
+The volatile `/tmp` cron + autorun path is best-effort and can fail on its own (autorun runs before the volume mounts). Check it too:
 
 ```bash
 getcfg Misc Autorun                        # must be TRUE
@@ -294,7 +305,7 @@ ls -l /etc/config/autorun.sh               # must be executable (-rwxr-xr-x) wit
 grep setup-cron.sh /etc/config/autorun.sh  # must be:  bash .../setup-cron.sh
 ```
 
-> **`autorun.sh` must be executable AND start with a shebang** — QNAP silently skips it at boot otherwise (a non-executable `autorun.sh` is the sneakiest version of this failure: autorun is "enabled" but the script never runs). `setup-cron.sh` enforces both on every run.
+> **`autorun.sh` must be executable AND start with a shebang** — QNAP silently skips it at boot otherwise. But even when perfect, autorun may fire **before `/share/CACHEDEV1_DATA` is mounted**, so it can't be the only mechanism — that's why the persistent `/etc/config/crontab` watchdog above is the real safety net.
 
 If any are wrong, just re-run the setup — it fixes all of them and is idempotent:
 
