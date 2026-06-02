@@ -231,6 +231,10 @@ What it does (idempotent — safe to re-run):
 
 **Providers run in-container.** `start.sh` runs inside the container; providers (`claude`, `qwen`, `opencode`) are local CLIs baked into the image — no nested `docker run`, no Docker socket required inside the container. `PROVIDER_CMD_*` in `config/agent.conf` uses local-mode (see `config/agent.conf.example`).
 
+> **Container paths in config:** the live `config/agent.conf` and `docker/docker-compose.yml` (both gitignored) must use container-side paths: `AGENT_HOME=/git/ai-server-agent`, `GIT_DIR=/git`. The example files already reflect this.
+
+> **QNAP compose binary:** `docker compose` (space, v2 plugin discovery) fails for the agent user on QNAP — use `/usr/local/lib/docker/cli-plugins/docker-compose` directly. `deploy-container.sh` auto-detects which form works and uses it.
+
 Verify the container is up:
 
 ```bash

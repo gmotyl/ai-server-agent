@@ -8,7 +8,10 @@ services:
     # — that's the reboot-proof autostart (no host cron / su / autorun needed).
     # Panel runs in-container so ports must be mapped; init:true reaps provider
     # grandchild processes so no zombies accumulate in the long-running container.
-    command: ["./start.sh"]
+    # Clear any stale singleton lock from the prior container generation before
+    # starting (PIDs are reused in a fresh namespace, so start.sh would otherwise
+    # false-positive "already running"). Container Station ensures a single instance.
+    command: ["sh", "-c", "rm -rf data/heartbeat.lock; exec ./start.sh"]
     working_dir: /git/ai-server-agent
     restart: unless-stopped
     init: true

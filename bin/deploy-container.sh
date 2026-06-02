@@ -9,15 +9,21 @@ AGENT_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE="${AGENT_HOME}/docker/docker-compose.yml"
 export PATH="/share/CACHEDEV1_DATA/.qpkg/container-station/bin:/opt/bin:$PATH"
 
+if docker compose version >/dev/null 2>&1; then
+  COMPOSE_CMD=(docker compose)
+else
+  COMPOSE_CMD=(/usr/local/lib/docker/cli-plugins/docker-compose)
+fi
+
 echo "[deploy] stopping any host-mode supervisor (frees the lock + port 3000)…"
 pkill -f 'bash ./start.sh' 2>/dev/null || true
 rm -rf "${AGENT_HOME}/data/heartbeat.lock" 2>/dev/null || true
 
 echo "[deploy] building image…"
-docker compose -f "$COMPOSE" build ai-agent
+"${COMPOSE_CMD[@]}" -f "$COMPOSE" build ai-agent
 
 echo "[deploy] starting persistent supervisor…"
-docker compose -f "$COMPOSE" up -d ai-agent
+"${COMPOSE_CMD[@]}" -f "$COMPOSE" up -d ai-agent
 
-docker compose -f "$COMPOSE" ps
+"${COMPOSE_CMD[@]}" -f "$COMPOSE" ps
 echo "[deploy] done. Panel: http://<nas-ip>:${PANEL_PORT:-3000}"

@@ -37,12 +37,12 @@ PROVIDER_CMD_pickle='cd {workdir} && timeout ${PROVIDER_TIMEOUT_SEC:-3600} openc
 
 # --- Paths ---
 # IMPORTANT: use 'export' so these are visible to provider subprocesses
-# AGENT_HOME is auto-detected from install location, override if needed
-# export AGENT_HOME="/share/CACHEDEV1_DATA/ai-server-agent"
-# GIT_DIR is the host path where repos live
-# export GIT_DIR="/share/CACHEDEV1_DATA/git"
-# CONTAINER_GIT_DIR is where that host path is mounted inside Docker
-# export CONTAINER_GIT_DIR="/git"
+# These are CONTAINER paths: the supervisor now runs inside the ai-agent container
+# (repo mounted at /git/ai-server-agent, git roots at /git). Host deployments
+# without the container would use host paths instead (e.g. /share/CACHEDEV1_DATA/…).
+export AGENT_HOME="/git/ai-server-agent"
+export GIT_DIR="/git"
+export CONTAINER_GIT_DIR="/git"
 
 # --- Admin Panel ---
 # Set a token to enable the web admin panel (leave empty to disable)
