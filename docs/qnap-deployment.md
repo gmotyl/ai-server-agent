@@ -206,53 +206,47 @@ mkdir -p memory/topics data logs
 ### 7. Test manually
 
 ```bash
-# Single heartbeat — should show "No new messages"
-bash bin/heartbeat.sh
-
-# Interactive mode — Ctrl+C to stop
+# Interactive mode — Ctrl+C to stop; confirms config + provider commands work
 ./start.sh
 ```
 
 Send a message in a Telegram topic. The agent should respond within seconds.
 
-### 8. Register the heartbeat cron (and make it survive reboots)
+### 8. Deploy as a persistent Container Station service
 
-One command does everything — registers the `*/30` watchdog that (re)starts the agent, enables QNAP autorun, and wires `autorun.sh` so the cron is re-created after every reboot:
+One command builds the image, starts the long-running `ai-agent` container, and registers it with Container Station's restart policy:
 
 ```bash
-sudo bash /share/CACHEDEV1_DATA/ai-server-agent/setup-cron.sh
+bash /share/CACHEDEV1_DATA/ai-server-agent/bin/deploy-container.sh
 ```
 
-What it does (all idempotent — safe to re-run):
+What it does (idempotent — safe to re-run):
 
-- **Hard-cron fallback (the reliable one):** appends a `*/10` watchdog to the **persistent** `/etc/config/crontab` that runs `start.sh --once` as the agent user:
-  ```
-  */10 * * * * su <user> -c '… cd /share/.../ai-server-agent && ./start.sh --once >> logs/agent.log 2>&1 || true'
-  ```
-  QTS loads `/etc/config/crontab` **after** the data volume mounts, so this fires reliably after any reboot and revives the agent (panel + soft cron) within 10 min. `start.sh --once` is an infinite loop guarded by a singleton lock, so the watchdog is a no-op while the agent is already running and self-heals if it dies.
-- Writes a `*/30` heartbeat to `/tmp/cron/crontabs/<user>` and restarts crond (fast path; same `start.sh --once`).
-- `setcfg Misc Autorun TRUE` + appends `bash .../setup-cron.sh` to `/etc/config/autorun.sh` (best-effort re-registration at boot).
-- Clears any stale `data/heartbeat.lock` from a crashed/SIGKILLed/rebooted run.
+- Stops any host-mode `start.sh` still running (frees the singleton lock and port 3000).
+- Clears any stale `data/heartbeat.lock`.
+- Runs `docker compose build ai-agent` to (re)build the image.
+- Runs `docker compose up -d ai-agent` — the container starts with `restart: unless-stopped`.
 
-> **Why the hard-cron fallback exists:** `autorun.sh` can run **before `/share/CACHEDEV1_DATA` is mounted** during early boot — then `bash .../setup-cron.sh` hits "no such file" and silently does nothing, so the `/tmp` cron is never recreated (observed across reboots even with `autorun=TRUE` and a correct `autorun.sh`). The persistent `/etc/config/crontab` watchdog fires on a schedule *after* the volume is mounted, so it doesn't depend on autorun timing. The two mechanisms coexist via the singleton lock.
+**Reboot persistence:** Container Station restarts `unless-stopped` containers **after** the data volume mounts on every boot — this is the same mechanism that keeps `homeassistant` alive across reboots on this NAS. No host cron, no `autorun.sh`, no `su` watchdog is needed.
 
-> **Why `su <user>`:** crond runs `/etc/config/crontab` as root; `su <user>` drops to the agent's owner so the agent (and the Docker container it spawns) run with the uid that owns `memory/`/`data/`, avoiding `Permission denied`. `/tmp/cron/crontabs/<user>` entries already run as `<user>` natively.
+**Providers run in-container.** `start.sh` runs inside the container; providers (`claude`, `qwen`, `opencode`) are local CLIs baked into the image — no nested `docker run`, no Docker socket required inside the container. `PROVIDER_CMD_*` in `config/agent.conf` uses local-mode (see `config/agent.conf.example`).
 
-> **The `bash` prefix in autorun.sh is mandatory.** The script may not carry the execute bit on the data share (the bit isn't reliably preserved across `git pull`/`rsync`/`scp`), so a direct `/share/.../setup-cron.sh` at boot dies with `Permission denied`. Calling it via `bash` is immune to that.
+Verify the container is up:
 
-> **Never wrap the cron call in `mkdir heartbeat.lock && (...) ; rmdir heartbeat.lock`.** That pattern looks defensive but it's a trap: if the agent is SIGKILLed or the NAS reboots mid-heartbeat, the lock directory survives and the outer `mkdir` fails silently forever after. `start.sh` already owns the lock and reclaims stale ones by PID — let it do its job.
+```bash
+/usr/local/lib/docker/cli-plugins/docker-compose -f docker/docker-compose.yml ps
+docker logs ai-server-agent-ai-agent-1 --tail 20
+```
 
 > **News generation is the soft cron, not a system crontab entry.** It lives in `data/schedules.json` (`generate-news`, `0 12 * * *`) and is evaluated by the heartbeat. Do **not** add a hardcoded news entry to the system crontab.
 
-Verify it's wired correctly **without rebooting**:
-
-```bash
-grep "start.sh --once" /etc/config/crontab   # hard-cron watchdog present (the reliable one)
-AGENT_USER=$(stat -c %U /share/CACHEDEV1_DATA/ai-server-agent)
-cat /tmp/cron/crontabs/$AGENT_USER     # fast-path heartbeat line present
-getcfg Misc Autorun                    # TRUE
-grep setup-cron.sh /etc/config/autorun.sh   # bash .../setup-cron.sh
-```
+> **Upgrading from the old host-cron model:** if you previously ran `setup-cron.sh`, remove the `*/10` watchdog from `/etc/config/crontab` to avoid a collision once the container is running:
+> ```bash
+> # as root:
+> vi /etc/config/crontab   # delete the */10 su <user> start.sh line
+> crontab /etc/config/crontab
+> ```
+> `setup-cron.sh` now prints a deprecation notice and exits — it no longer installs anything.
 
 ## Troubleshooting
 
@@ -287,38 +281,28 @@ echo '{}' > ~/.docker/config.json
 
 ### Agent doesn't start after a reboot
 
-Symptoms: panel (`:3000`) unreachable, no new lines in `logs/agent.log`, and `/tmp/cron/crontabs/<user>` missing.
+Symptoms: panel (`:3000`) unreachable, container not listed by `docker ps`.
 
-First check the **hard-cron fallback** — it's the mechanism that's supposed to survive reboots regardless of autorun timing:
-
-```bash
-grep "start.sh --once" /etc/config/crontab   # the */10 su <user> watchdog must be here
-```
-
-If it's missing, re-run `sudo bash setup-cron.sh` (it installs it). If it's present but the agent is still down >10 min after boot, check that crond loaded it: `cat /tmp/cron/crontabs/admin | grep start.sh`.
-
-The volatile `/tmp` cron + autorun path is best-effort and can fail on its own (autorun runs before the volume mounts). Check it too:
+Container Station restarts `unless-stopped` containers after volume mounts on boot. If the container is missing, re-deploy:
 
 ```bash
-getcfg Misc Autorun                        # must be TRUE
-ls -l /etc/config/autorun.sh               # must be executable (-rwxr-xr-x) with a #!/bin/sh shebang
-grep setup-cron.sh /etc/config/autorun.sh  # must be:  bash .../setup-cron.sh
+bash /share/CACHEDEV1_DATA/ai-server-agent/bin/deploy-container.sh
 ```
 
-> **`autorun.sh` must be executable AND start with a shebang** — QNAP silently skips it at boot otherwise. But even when perfect, autorun may fire **before `/share/CACHEDEV1_DATA` is mounted**, so it can't be the only mechanism — that's why the persistent `/etc/config/crontab` watchdog above is the real safety net.
-
-If any are wrong, just re-run the setup — it fixes all of them and is idempotent:
+To check status and tail logs:
 
 ```bash
-sudo bash /share/CACHEDEV1_DATA/ai-server-agent/setup-cron.sh
+/usr/local/lib/docker/cli-plugins/docker-compose -f docker/docker-compose.yml ps
+docker logs ai-server-agent-ai-agent-1 --tail 50
 ```
 
-To restore service immediately (without waiting for the next `*/30` fire), launch the agent by hand — note QNAP's BusyBox has **no `nohup`; use `setsid`**:
+To restart without rebuilding:
 
 ```bash
-cd /share/CACHEDEV1_DATA/ai-server-agent
-setsid bash ./start.sh < /dev/null >> logs/agent.log 2>&1 &
+/usr/local/lib/docker/cli-plugins/docker-compose -f docker/docker-compose.yml up -d ai-agent
 ```
+
+> **Old host-cron installs:** if the container is up but a ghost `start.sh` process on the host collides with it (port 3000 or lock conflict), check for a stale `*/10` entry in `/etc/config/crontab` left over from a previous host-cron deployment and remove it (see the upgrade note in step 8).
 
 ### After a reboot: SSH key rejected / home dir gone / `cd` fails
 
@@ -347,17 +331,18 @@ With the current cron entry (no outer `mkdir .../heartbeat.lock` gate), `start.s
 
 ### A provider task hangs for hours / wedges the agent
 
-Each provider run is hard-capped by `PROVIDER_TIMEOUT_SEC` (default 3600s), enforced **inside the container** by `timeout` in `bin/docker-provider.sh`. When it fires, `claude`/`qwen` is killed, the `--rm` container is reaped, and exit code 124 is reported as a timeout — so a hung run can no longer hold the singleton lock and wedge the agent.
+Each provider run is hard-capped by `PROVIDER_TIMEOUT_SEC` (default 3600s). In the in-container model the `timeout` guard is in the `PROVIDER_CMD_*` template itself (see `config/agent.conf.example`). Exit code 124 propagates to `lib/provider.sh`, which reports it as a timeout — so a hung run cannot hold the singleton lock indefinitely.
 
-If a run still appears stuck (e.g. an old container from before this guard, or a wedged compose client), recover manually:
+If a run still appears stuck, restart the container (it runs `start.sh` which picks up cleanly):
 
 ```bash
-docker ps                                    # find the long-running ai-agent run container
-docker stop <container>                      # stop the hung provider
+/usr/local/lib/docker/cli-plugins/docker-compose -f docker/docker-compose.yml restart ai-agent
+# or, to also clear the lock manually first:
 rm -rf /share/CACHEDEV1_DATA/ai-server-agent/data/heartbeat.lock
+/usr/local/lib/docker/cli-plugins/docker-compose -f docker/docker-compose.yml up -d ai-agent
 ```
 
-The next `*/30` heartbeat (or a manual `setsid bash ./start.sh &`) then resumes; the schedule catch-up re-runs any window that was missed while it was wedged. To tune the cap, set `PROVIDER_TIMEOUT_SEC` in `config/agent.conf`.
+To tune the cap, set `PROVIDER_TIMEOUT_SEC` in `config/agent.conf`.
 
 ## Updating
 
