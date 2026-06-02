@@ -62,24 +62,25 @@ touch "${AGENT_HOME}/memory/MEMORY.md"
 
 # 5. Make scripts executable
 chmod +x "${AGENT_HOME}"/bin/*.sh "${AGENT_HOME}/start.sh" "${AGENT_HOME}/setup-cron.sh"
+chmod +x "${AGENT_HOME}/bin/deploy-container.sh"
 
-# 6. Register the heartbeat cron + QNAP reboot persistence
+# 6. Deploy the persistent Container Station supervisor
 echo ""
-if [[ "$(id -u)" == "0" ]]; then
-  echo "Registering heartbeat cron + reboot persistence (setup-cron.sh)..."
-  bash "${AGENT_HOME}/setup-cron.sh"
+if docker compose version >/dev/null 2>&1 || /usr/local/lib/docker/cli-plugins/docker-compose version >/dev/null 2>&1; then
+  echo "Deploying persistent supervisor (bin/deploy-container.sh)..."
+  bash "${AGENT_HOME}/bin/deploy-container.sh"
 else
-  echo "=== Almost done — register the cron as root ==="
+  echo "=== Almost done — deploy the Container Station service ==="
   echo ""
-  echo "Run this once. It installs the */30 heartbeat watchdog and makes it survive"
-  echo "reboots (enables QNAP autorun, wires autorun.sh via bash, clears stale locks):"
+  echo "Run this once to build the image and start the long-running container."
+  echo "Container Station will auto-restart it on every reboot (restart: unless-stopped):"
   echo ""
-  echo "  sudo bash ${AGENT_HOME}/setup-cron.sh"
+  echo "  bash ${AGENT_HOME}/bin/deploy-container.sh"
   echo ""
 fi
 
 echo "=== Server setup complete ==="
-echo "  - Heartbeat: */30 start.sh --once  (start.sh owns its own lock — no mkdir gate)"
-echo "  - News:      soft cron only — data/schedules.json (generate-news, 0 12 * * *)"
-echo "  - Manual:    ./start.sh  (interactive, Ctrl+C to stop)"
+echo "  - Supervisor: persistent container (restart: unless-stopped, auto-starts on boot)"
+echo "  - News:       soft cron only — data/schedules.json (generate-news, 0 12 * * *)"
+echo "  - Manual:     docker compose -f docker/docker-compose.yml logs -f ai-agent"
 echo ""
