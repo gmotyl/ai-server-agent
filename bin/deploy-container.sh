@@ -4,6 +4,8 @@
 # with its restart policy. Container Station auto-starts it on every reboot.
 set -euo pipefail
 AGENT_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1090
+[ -f "${AGENT_HOME}/config/agent.conf" ] && . "${AGENT_HOME}/config/agent.conf" || true
 COMPOSE="${AGENT_HOME}/docker/docker-compose.yml"
 export PATH="/share/CACHEDEV1_DATA/.qpkg/container-station/bin:/opt/bin:$PATH"
 

@@ -10,8 +10,8 @@ HEARTBEAT_INTERVAL_MIN=30
 HEARTBEAT_TIMEOUT_SEC=3600
 # Hard cap (seconds) on a single provider run, enforced INSIDE the container by
 # `timeout`. Stops a hung claude/qwen from holding the lock and wedging the agent.
-# Defaults to HEARTBEAT_TIMEOUT_SEC if unset.
-PROVIDER_TIMEOUT_SEC=3600
+# below HEARTBEAT_TIMEOUT_SEC so the per-provider guard fires first
+PROVIDER_TIMEOUT_SEC=3540
 # How long to wait for a Telegram message before looping (seconds).
 # Higher = less disk activity on NAS. Max ~55 (Telegram API limit).
 POLL_TIMEOUT=55

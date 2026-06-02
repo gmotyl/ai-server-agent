@@ -62,7 +62,6 @@ touch "${AGENT_HOME}/memory/MEMORY.md"
 
 # 5. Make scripts executable
 chmod +x "${AGENT_HOME}"/bin/*.sh "${AGENT_HOME}/start.sh" "${AGENT_HOME}/setup-cron.sh"
-chmod +x "${AGENT_HOME}/bin/deploy-container.sh"
 
 # 6. Deploy the persistent Container Station supervisor
 echo ""
