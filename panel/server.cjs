@@ -645,7 +645,7 @@ function describeProvider(name) {
     extra: parsed.extra,
     custom: parsed.custom,
     mode: parsed.mode,
-    preconfigured: dockerKnown || parsed.mode === 'local',
+    preconfigured: PRECONFIGURED_DISPATCHERS.includes(parsed.dispatcher),
     warning,
     command: raw,
   };

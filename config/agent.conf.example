@@ -10,8 +10,10 @@ HEARTBEAT_INTERVAL_MIN=30
 HEARTBEAT_TIMEOUT_SEC=3600
 # Hard cap (seconds) on a single provider run, enforced INSIDE the container by
 # `timeout`. Stops a hung claude/qwen from holding the lock and wedging the agent.
-# below HEARTBEAT_TIMEOUT_SEC so the per-provider guard fires first
-PROVIDER_TIMEOUT_SEC=3540
+# below HEARTBEAT_TIMEOUT_SEC so the per-provider guard fires first.
+# Exported so the provider's `bash -c` subshell inherits it (lib/provider.sh runs
+# the command in a child shell — an unexported var would not be seen).
+export PROVIDER_TIMEOUT_SEC=3540
 # How long to wait for a Telegram message before looping (seconds).
 # Higher = less disk activity on NAS. Max ~55 (Telegram API limit).
 POLL_TIMEOUT=55
@@ -25,11 +27,11 @@ DEFAULT_PROVIDER="claude"
 #
 # In-container local mode — supervisor runs INSIDE the ai-agent container, so
 # providers execute as direct CLIs (no nested docker). timeout guards a hung run
-# (exit 124 → lib/provider.sh reports a timeout). PROVIDER_TIMEOUT_SEC default 3600.
-PROVIDER_CMD_claude='cd {workdir} && timeout ${PROVIDER_TIMEOUT_SEC:-3600} claude --dangerously-skip-permissions -p "$(cat {prompt_file})"'
-PROVIDER_CMD_qwen='cd {workdir} && timeout ${PROVIDER_TIMEOUT_SEC:-3600} qwen -y -p "$(cat {prompt_file})"'
-PROVIDER_CMD_minimax='cd {workdir} && timeout ${PROVIDER_TIMEOUT_SEC:-3600} opencode run -m opencode/minimax-m2.5-free "$(cat {prompt_file})"'
-PROVIDER_CMD_pickle='cd {workdir} && timeout ${PROVIDER_TIMEOUT_SEC:-3600} opencode run -m opencode/big-pickle "$(cat {prompt_file})"'
+# (exit 124 → lib/provider.sh reports a timeout). Uses the exported PROVIDER_TIMEOUT_SEC.
+PROVIDER_CMD_claude='cd {workdir} && timeout ${PROVIDER_TIMEOUT_SEC:-3540} claude --dangerously-skip-permissions -p "$(cat {prompt_file})"'
+PROVIDER_CMD_qwen='cd {workdir} && timeout ${PROVIDER_TIMEOUT_SEC:-3540} qwen -y -p "$(cat {prompt_file})"'
+PROVIDER_CMD_minimax='cd {workdir} && timeout ${PROVIDER_TIMEOUT_SEC:-3540} opencode run -m opencode/minimax-m2.5-free "$(cat {prompt_file})"'
+PROVIDER_CMD_pickle='cd {workdir} && timeout ${PROVIDER_TIMEOUT_SEC:-3540} opencode run -m opencode/big-pickle "$(cat {prompt_file})"'
 #
 # Note for opencode-backed providers:
 # After first container start, run `opencode auth login` inside the container once;

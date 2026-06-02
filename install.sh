@@ -27,7 +27,14 @@ if [[ ! -f "${AGENT_HOME}/docker/docker-compose.yml" ]]; then
   exit 0
 fi
 
+# Source config to validate tokens, but preserve the host-detected paths — the
+# config exports CONTAINER-side AGENT_HOME/GIT_DIR which must not leak into this
+# host-side installer (it would break the build + deploy paths below).
+_host_agent_home="$AGENT_HOME"
+_had_git_dir=0; [[ -n "${GIT_DIR:-}" ]] && { _had_git_dir=1; _host_git_dir="$GIT_DIR"; }
 source "${AGENT_HOME}/config/agent.conf"
+AGENT_HOME="$_host_agent_home"
+if [[ $_had_git_dir -eq 1 ]]; then export GIT_DIR="$_host_git_dir"; else unset GIT_DIR; fi
 
 # Validate required config
 if [[ -z "${TELEGRAM_BOT_TOKEN:-}" ]]; then
