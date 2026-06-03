@@ -25,6 +25,8 @@ services:
     ports:
       - "${PANEL_PORT:-3000}:${PANEL_PORT:-3000}"
     network_mode: bridge
+    environment:
+      - TZ=Europe/Warsaw        # cron expressions evaluated in local time
 
 volumes:
   agent-home:
