@@ -4,17 +4,29 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     image: ai-server-agent
-    entrypoint: []
+    # Container Station restarts unless-stopped containers after volume mounts on boot
+    # — that's the reboot-proof autostart (no host cron / su / autorun needed).
+    # Panel runs in-container so ports must be mapped; init:true reaps provider
+    # grandchild processes so no zombies accumulate in the long-running container.
+    # Clear any stale singleton lock from the prior container generation before
+    # starting (PIDs are reused in a fresh namespace, so start.sh would otherwise
+    # false-positive "already running"). Container Station ensures a single instance.
+    command: ["sh", "-c", "rm -rf data/heartbeat.lock; exec ./start.sh"]
+    working_dir: /git/ai-server-agent
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
     volumes:
       - ${GIT_DIR:-/your/git/dir}:/git
       - ${AGENT_HOME:-/your/agent/home}:/git/ai-server-agent
       - agent-home:/home/agent
       - /your/home/.ssh:/home/agent/.ssh:ro
       - ${AGENT_HOME:-/your/agent/home}/memory:/memory
-    working_dir: /git
     ports:
       - "${PANEL_PORT:-3000}:${PANEL_PORT:-3000}"
     network_mode: bridge
+    environment:
+      - TZ=Europe/Warsaw        # cron expressions evaluated in local time
 
 volumes:
   agent-home:

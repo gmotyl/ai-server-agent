@@ -581,10 +581,18 @@ function buildProviderCmdValue(dispatcher, extra) {
 }
 
 function parseProviderCmdValue(rawValue) {
-  const re = /^"\$\{AGENT_HOME\}\/bin\/docker-provider\.sh"\s+(\S+)\s+\{prompt_file\}\s+\{workdir\}\s*(.*)$/;
-  const m = rawValue.match(re);
-  if (!m) return { dispatcher: 'custom', extra: rawValue, custom: true };
-  return { dispatcher: m[1], extra: m[2].trim(), custom: false };
+  // Docker mode: docker-provider.sh dispatches the CLI inside the shared image.
+  const dockerRe = /^"\$\{AGENT_HOME\}\/bin\/docker-provider\.sh"\s+(\S+)\s+\{prompt_file\}\s+\{workdir\}\s*(.*)$/;
+  const dm = rawValue.match(dockerRe);
+  if (dm) return { dispatcher: dm[1], extra: dm[2].trim(), custom: false, mode: 'docker' };
+  // Local mode: the CLI runs directly in the persistent supervisor container
+  // (Container Station). Form: cd {workdir} && [timeout N] <cli> ... {prompt_file}.
+  // The CLI is already in the image, so there is no dispatcher to validate.
+  if (rawValue.includes('{prompt_file}') && rawValue.includes('{workdir}')) {
+    const lm = rawValue.match(/&&\s*(?:timeout\s+\S+\s+)?([A-Za-z0-9_./-]+)/);
+    if (lm) return { dispatcher: lm[1], extra: '', custom: false, mode: 'local' };
+  }
+  return { dispatcher: 'custom', extra: rawValue, custom: true, mode: 'custom' };
 }
 
 function upsertProviderInConfig(name, rawValue) {
@@ -624,15 +632,21 @@ function describeProvider(name) {
   const raw = config[`PROVIDER_CMD_${name}`];
   if (!raw) return null;
   const parsed = parseProviderCmdValue(raw);
-  const preconfigured = !parsed.custom && PRECONFIGURED_DISPATCHERS.includes(parsed.dispatcher);
+  const dockerKnown = parsed.mode === 'docker' && PRECONFIGURED_DISPATCHERS.includes(parsed.dispatcher);
+  // Only Docker-mode dispatchers that aren't baked into the shared image need the
+  // rebuild hint. Local-mode providers run the CLI directly in-container — nothing
+  // to validate, so no warning.
+  const warning = parsed.mode === 'docker' && !dockerKnown
+    ? `Dispatcher "${parsed.dispatcher}" is not in the shared Docker image. Add it to docker/Dockerfile and bin/docker-provider.sh, then rebuild — see docs/adding-docker-provider.md`
+    : null;
   return {
     name,
     dispatcher: parsed.dispatcher,
     extra: parsed.extra,
     custom: parsed.custom,
-    preconfigured,
-    warning: preconfigured ? null
-      : `Dispatcher "${parsed.dispatcher}" is not in the shared Docker image. Add it to docker/Dockerfile and bin/docker-provider.sh, then rebuild — see docs/adding-docker-provider.md`,
+    mode: parsed.mode,
+    preconfigured: PRECONFIGURED_DISPATCHERS.includes(parsed.dispatcher),
+    warning,
     command: raw,
   };
 }
