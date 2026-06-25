@@ -8,6 +8,30 @@ get_provider_cmd() {
   echo "${!var_name}"
 }
 
+# Tear down any agent-browser Chrome the provider left running.
+# agent-browser keeps a headless Chrome alive in the background between CLI calls
+# and only releases it on an explicit `agent-browser close`. A provider that
+# exits — or is timeout-killed — without closing it orphans that Chrome: it is
+# daemonized (reparented to init), so it lives outside the provider's process
+# group and the run's `timeout` SIGTERM never reaches it. A runaway renderer then
+# pegs the CPU indefinitely. Tasks run one-at-a-time under flock, so once a run is
+# done no agent-browser Chrome should remain — sweeping every match is safe.
+cleanup_browser_sessions() {
+  local to="timeout"
+  command -v timeout &>/dev/null || to="gtimeout"
+  command -v "$to" &>/dev/null || to=""
+  # Graceful first (lets agent-browser flush state), bounded so a wedged browser
+  # can't hang the heartbeat. Best-effort; the kill below is the real backstop.
+  if command -v agent-browser &>/dev/null; then
+    if [[ -n "$to" ]]; then "$to" 15 agent-browser close &>/dev/null || true
+    else agent-browser close &>/dev/null || true; fi
+  fi
+  # Hard backstop: kill anything still bound to an agent-browser profile dir, then
+  # reap the leftover profile dirs so /tmp doesn't grow across runs.
+  pkill -9 -f 'agent-browser-chrome-' 2>/dev/null || true
+  rm -rf /tmp/agent-browser-chrome-* 2>/dev/null || true
+}
+
 # Run a provider with a prompt in a workdir
 # Returns: provider output on stdout, exit code
 run_provider() {
@@ -55,6 +79,9 @@ run_provider() {
   exit_code=$?
 
   rm -f "$prompt_file"
+
+  # Always reap any browser the provider left behind — normal exit or timeout.
+  cleanup_browser_sessions
 
   if [[ $exit_code -eq 124 ]]; then
     log "WARN" "Provider '${provider}' timed out after ${HEARTBEAT_TIMEOUT_SEC}s" >&2
