@@ -82,6 +82,15 @@ $(echo "$html_files" | while read -r f; do echo "- ${f}"; done)
     "Your home directory is ${AGENT_HOME}. Repos are mounted in ${CONTAINER_GIT_DIR} inside the runtime container. The host repo root is ${GIT_DIR}." \
     "Write any persistent learnings to ${AGENT_HOME}/memory/MEMORY.md." \
     "" \
+    "=== RUNTIME CONTRACT (single-shot) ===" \
+    "This is a single-shot process. There is no next turn: the moment you stop, the process is killed and every child process dies with it." \
+    "- Never run anything in the background — no trailing &, no background shells, no \"I'll be notified when it finishes\". A backgrounded command does not survive your final message." \
+    "- Never end your turn saying you will wait for, check back on, resume, or pick something up later. There is no later." \
+    "- Every command runs in the foreground and blocks until it returns." \
+    "- If a step is too slow, narrow it (fewer tests, smaller scope) — never defer it." \
+    "- Finish ALL the requested work, including any commit and push, BEFORE your final message." \
+    "- Your final message reports only what is already done. It is never a promise." \
+    "" \
     "=== RESPONSE FORMAT ===" \
     "For simple responses (confirmations, short answers), reply in plain text. Keep under 4000 characters." \
     "" \

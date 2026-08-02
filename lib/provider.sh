@@ -65,3 +65,31 @@ run_provider() {
   echo "$output"
   return $exit_code
 }
+
+# Run a scheduled task's acceptance check in its workdir.
+# Returns: combined stdout+stderr on stdout, the check's exit code (124 on timeout).
+#
+# The provider's own exit code proves nothing — a single-shot run that backgrounds
+# its work and ends its turn still exits 0. This asserts the task's goal was reached.
+#
+# GIT_DIR/GIT_WORK_TREE are unset: agent.conf exports GIT_DIR as the repo *root*,
+# which collides with git's own GIT_DIR and breaks every git command in a check.
+run_verify() {
+  local verify_cmd="$1"
+  local workdir="$2"
+  local timeout_sec="${VERIFY_TIMEOUT_SEC:-300}"
+
+  local script
+  script="unset GIT_DIR GIT_WORK_TREE; cd $(printf '%q' "$workdir") || exit 2
+${verify_cmd}"
+
+  local timeout_cmd="timeout"
+  command -v timeout &>/dev/null || timeout_cmd="gtimeout"
+  command -v "$timeout_cmd" &>/dev/null || timeout_cmd=""
+
+  if [[ -n "$timeout_cmd" ]]; then
+    "$timeout_cmd" "$timeout_sec" bash -c "$script" < /dev/null 2>&1
+  else
+    bash -c "$script" < /dev/null 2>&1
+  fi
+}
