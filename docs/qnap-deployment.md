@@ -258,7 +258,7 @@ If `/git/zdrofit-sniper/dist/cli.js` exists, `start.sh` starts a restart loop (o
 
 - **Restarts:** the sniper wizard kills the daemon on every save; the loop restarts it within ~5 s with fresh state.
 - **Install:** clone `gmotyl/zdrofit-sniper` into `/git/zdrofit-sniper`, run `pnpm install && pnpm build` there (inside the container), then restart the container.
-- **Configure:**
+- **Configure** (the container name may differ by compose project, e.g. `ai-server-agent-ai-agent-1`; check with `docker ps`):
   ```bash
   docker exec -it docker-ai-agent-1 sh -c 'cd /git/zdrofit-sniper && pnpm sniper setup'
   ```

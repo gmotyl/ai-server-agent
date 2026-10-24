@@ -121,10 +121,10 @@ fi
 
 # --- zdrofit-sniper daemon (optional sidecar) ---
 # Restart loop: the sniper wizard kills the daemon on every save; this brings it back with fresh state.
-# `|| true`: the subshell inherits `set -e`, so a non-zero daemon exit (e.g. SIGTERM from the wizard)
-# would otherwise end the loop instead of restarting the daemon.
+# `|| true`: the subshell inherits `set -e`; a crash or `exit 1` (e.g. "daemon already running",
+# corrupt state.json) would otherwise end the loop. The wizard's SIGTERM exits 0.
 if [[ -f /git/zdrofit-sniper/dist/cli.js ]]; then
-  ( cd /git/zdrofit-sniper && mkdir -p data/logs \
+  ( cd /git/zdrofit-sniper && mkdir -p data/logs && chmod 700 data \
     && while true; do node dist/cli.js daemon >> data/logs/daemon.out 2>&1 || true; sleep 5; done ) &
 fi
 
