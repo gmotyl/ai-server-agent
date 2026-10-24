@@ -252,6 +252,17 @@ docker logs ai-server-agent-ai-agent-1 --tail 20
 > ```
 > `setup-cron.sh` now prints a deprecation notice and exits — it no longer installs anything.
 
+### zdrofit-sniper sidecar
+
+If `/git/zdrofit-sniper/dist/cli.js` exists, `start.sh` starts a restart loop (once per container start, after the singleton lock) that runs `node dist/cli.js daemon` in `/git/zdrofit-sniper`, appending output to `data/logs/daemon.out` there. Without that file, `start.sh` behaves as before.
+
+- **Restarts:** the sniper wizard kills the daemon on every save; the loop restarts it within ~5 s with fresh state.
+- **Install:** clone `gmotyl/zdrofit-sniper` into `/git/zdrofit-sniper`, run `pnpm install && pnpm build` there (inside the container), then restart the container.
+- **Configure:**
+  ```bash
+  docker exec -it docker-ai-agent-1 sh -c 'cd /git/zdrofit-sniper && pnpm sniper setup'
+  ```
+
 ## Troubleshooting
 
 ### Logs

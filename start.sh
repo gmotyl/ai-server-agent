@@ -119,6 +119,15 @@ if [[ -n "${ADMIN_TOKEN:-}" ]]; then
   fi
 fi
 
+# --- zdrofit-sniper daemon (optional sidecar) ---
+# Restart loop: the sniper wizard kills the daemon on every save; this brings it back with fresh state.
+# `|| true`: the subshell inherits `set -e`, so a non-zero daemon exit (e.g. SIGTERM from the wizard)
+# would otherwise end the loop instead of restarting the daemon.
+if [[ -f /git/zdrofit-sniper/dist/cli.js ]]; then
+  ( cd /git/zdrofit-sniper && mkdir -p data/logs \
+    && while true; do node dist/cli.js daemon >> data/logs/daemon.out 2>&1 || true; sleep 5; done ) &
+fi
+
 # --- Process queued Telegram updates ---
 # Process service messages (topic created/closed/reopened) from the queue,
 # then advance the offset. This preserves topic state even across restarts.
