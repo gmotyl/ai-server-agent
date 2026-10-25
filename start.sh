@@ -98,6 +98,13 @@ fi
 # --- Lock cleanup on exit ---
 cleanup() {
   [[ -n "${PANEL_PID:-}" ]] && kill "$PANEL_PID" 2>/dev/null || true
+  # zdrofit-sniper sidecar: TERM to the restart loop makes its trap kill the current daemon
+  # child and exit, so nothing respawns. The PID-file kill is a fallback (no ps/pkill in the
+  # container); the daemon handles SIGTERM, removes its PID file and exits 0.
+  [[ -n "${SNIPER_LOOP_PID:-}" ]] && kill "$SNIPER_LOOP_PID" 2>/dev/null || true
+  if [[ -n "${SNIPER_LOOP_PID:-}" && -f "${SNIPER_PID_FILE:-}" ]]; then
+    kill "$(cat "$SNIPER_PID_FILE" 2>/dev/null)" 2>/dev/null || true
+  fi
   rm -f "${LOCK_DIR}/pid"
   rmdir "${LOCK_DIR}" 2>/dev/null || true
 }
@@ -106,6 +113,8 @@ trap "exit 130" INT TERM
 
 # --- Start admin panel ---
 PANEL_PID=""
+SNIPER_LOOP_PID=""
+SNIPER_PID_FILE="/git/zdrofit-sniper/data/daemon.pid"
 if [[ -n "${ADMIN_TOKEN:-}" ]]; then
   # Find node: prefer PATH, fallback to known QNAP locations
   NODE_BIN=$(command -v node 2>/dev/null \
@@ -117,6 +126,26 @@ if [[ -n "${ADMIN_TOKEN:-}" ]]; then
   else
     echo "WARNING: node not found — admin panel disabled"
   fi
+fi
+
+# --- zdrofit-sniper daemon (optional sidecar) ---
+# Restart loop: the sniper wizard kills the daemon on every save; this brings it back with fresh state.
+# The loop owns its child: node runs in the background and the loop `wait`s on it, so a TERM/INT to
+# the loop fires the trap at once and kills the current daemon even before it writes its PID file.
+# `|| true`: the subshell inherits `set -e`; a crash or `exit 1` (e.g. "daemon already running",
+# corrupt state.json) would otherwise end the loop. The wizard's SIGTERM exits 0.
+if [[ -f /git/zdrofit-sniper/dist/cli.js ]]; then
+  ( child=""
+    trap 'kill "$child" 2>/dev/null || true; exit 0' TERM INT
+    cd /git/zdrofit-sniper && mkdir -p data/logs && chmod 700 data
+    while true; do
+      node dist/cli.js daemon >> data/logs/daemon.out 2>&1 &
+      child=$!
+      wait "$child" || true
+      child=""
+      sleep 5
+    done ) &
+  SNIPER_LOOP_PID=$!
 fi
 
 # --- Process queued Telegram updates ---
