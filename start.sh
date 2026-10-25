@@ -98,6 +98,13 @@ fi
 # --- Lock cleanup on exit ---
 cleanup() {
   [[ -n "${PANEL_PID:-}" ]] && kill "$PANEL_PID" 2>/dev/null || true
+  # zdrofit-sniper sidecar: kill the restart loop first so it cannot respawn the daemon,
+  # then stop the daemon via its PID file (no ps/pkill in the container). The daemon
+  # handles SIGTERM, removes its PID file and exits 0.
+  [[ -n "${SNIPER_LOOP_PID:-}" ]] && kill "$SNIPER_LOOP_PID" 2>/dev/null || true
+  if [[ -n "${SNIPER_LOOP_PID:-}" && -f "${SNIPER_PID_FILE:-}" ]]; then
+    kill "$(cat "$SNIPER_PID_FILE" 2>/dev/null)" 2>/dev/null || true
+  fi
   rm -f "${LOCK_DIR}/pid"
   rmdir "${LOCK_DIR}" 2>/dev/null || true
 }
@@ -106,6 +113,8 @@ trap "exit 130" INT TERM
 
 # --- Start admin panel ---
 PANEL_PID=""
+SNIPER_LOOP_PID=""
+SNIPER_PID_FILE="/git/zdrofit-sniper/data/daemon.pid"
 if [[ -n "${ADMIN_TOKEN:-}" ]]; then
   # Find node: prefer PATH, fallback to known QNAP locations
   NODE_BIN=$(command -v node 2>/dev/null \
@@ -126,6 +135,7 @@ fi
 if [[ -f /git/zdrofit-sniper/dist/cli.js ]]; then
   ( cd /git/zdrofit-sniper && mkdir -p data/logs && chmod 700 data \
     && while true; do node dist/cli.js daemon >> data/logs/daemon.out 2>&1 || true; sleep 5; done ) &
+  SNIPER_LOOP_PID=$!
 fi
 
 # --- Process queued Telegram updates ---
