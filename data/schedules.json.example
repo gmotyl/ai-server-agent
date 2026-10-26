@@ -5,6 +5,12 @@
     "prompt": "generate-news all",
     "provider": "qwen",
     "workdir": "/git/example-project",
-    "topic_name": "Scheduled: Daily News"
+    "topic_name": "Scheduled: Daily News",
+
+    "_comment_verify": "Optional acceptance check, run in workdir after the provider. Non-zero = the task did not reach its goal, regardless of the provider's exit code. GIT_DIR/GIT_WORK_TREE are unset for it. On failure the provider is re-run once with a repair prompt, then the task is marked failed and reported to Telegram.",
+    "verify": "pending=$(git status --porcelain -- news); if [ -n \"$pending\" ]; then echo \"uncommitted:\"; echo \"$pending\"; exit 1; fi; unpushed=$(git rev-list --count origin/main..HEAD); if [ \"$unpushed\" != \"0\" ]; then echo \"$unpushed unpushed commit(s)\"; exit 1; fi",
+
+    "_comment_verify_retries": "Repair attempts before giving up. Default 1.",
+    "verify_retries": 1
   }
 ]
