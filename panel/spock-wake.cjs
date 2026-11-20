@@ -107,6 +107,7 @@ function createWaker(deps) {
 
   async function wake({ pin } = {}) {
     if (!ready) return { status: 'not_configured' };
+    if (pin && !pinSteps.some((s) => s.text === '$PIN')) return { status: 'steps_missing_pin', message: 'Configured steps contain no $PIN text step' };
     if (busy) return { status: 'busy', message: 'A wake is already running' };
     if (pin && now() < cooldownUntil) {
       return { status: 'cooldown', message: PIN_WARNING, retryAfterMs: cooldownUntil - now() };
@@ -176,7 +177,16 @@ function bearerOk(req, expected) {
 }
 
 function createWakeHandler({ waker, token, allowedHosts = [], now = Date.now, log = () => {}, maxFails = 5, lockMs = 60000 }) {
-  const fails = new Map(); // ip -> {n, until}
+  const fails = new Map(); // ip -> {n, until, at}; bounded by MAX_FAIL_IPS
+  const MAX_FAIL_IPS = 1000;
+
+  function pruneFails() {
+    const t = now();
+    for (const [ip, e] of fails) {
+      if (e.until > 0 ? e.until <= t : t - e.at > lockMs) fails.delete(ip);
+    }
+    while (fails.size >= MAX_FAIL_IPS) fails.delete(fails.keys().next().value);
+  }
 
   function send(res, status, data) {
     res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', Vary: 'Origin' });
@@ -196,7 +206,7 @@ function createWakeHandler({ waker, token, allowedHosts = [], now = Date.now, lo
     return allowedHosts.some((h) => { h = h.toLowerCase(); return h === host || h === bare; });
   }
 
-  return async function handle(req, res) {
+  async function handle(req, res) {
     const pathname = (req.url || '').split('?')[0];
     if (req.method === 'OPTIONS') { res.writeHead(204, { 'Cache-Control': 'no-store', Vary: 'Origin' }); return res.end(); }
     if (!token) return send(res, 503, { error: 'Wake disabled' });
@@ -208,9 +218,12 @@ function createWakeHandler({ waker, token, allowedHosts = [], now = Date.now, lo
     const f = fails.get(ip);
     if (f && f.until > now()) return send(res, 429, { error: 'Too many failed attempts' });
     if (!bearerOk(req, token)) {
-      const cur = f && f.until === 0 ? f : { n: 0, until: 0 };
+      const cur = f && f.until === 0 ? f : { n: 0, until: 0, at: 0 };
       cur.n++;
+      cur.at = now();
       if (cur.n >= maxFails) { cur.n = 0; cur.until = now() + lockMs; }
+      fails.delete(ip);
+      pruneFails();
       fails.set(ip, cur);
       return send(res, 401, { error: 'Unauthorized' });
     }
@@ -228,6 +241,7 @@ function createWakeHandler({ waker, token, allowedHosts = [], now = Date.now, lo
     }
     try {
       const r = await waker.wake({ pin });
+      if (r.status === 'steps_missing_pin') return send(res, 500, { error: 'steps_missing_pin' });
       const http = { not_configured: 503, busy: 409, cooldown: 429, not_sent: 502 }[r.status] || 200;
       return send(res, http, r);
     } catch (err) {
@@ -236,7 +250,9 @@ function createWakeHandler({ waker, token, allowedHosts = [], now = Date.now, lo
       log('spock-wake: error', m);
       return send(res, 500, { error: 'Wake failed' });
     }
-  };
+  }
+  handle._failsSize = () => fails.size;
+  return handle;
 }
 
 module.exports = { sealFrame, encodeSteps, createWaker, createWakeHandler, isWakePath, DEFAULT_PIN_STEPS };

@@ -198,3 +198,43 @@ test('no wildcard CORS on the route', async () => {
   assert.ok(src.indexOf('isWakePath(pathname)') > 0);
   assert.ok(src.indexOf('isWakePath(pathname)') < src.indexOf("'Access-Control-Allow-Origin'"));
 });
+
+test('refuses PIN wake when steps have no $PIN text step', async () => {
+  const env = fakeEnv({ config: { SPOCK_STEPS_JSON: JSON.stringify([{ key: 0x6a }, { pause: 100 }]) } });
+  const r = await env.waker.wake({ pin: PIN });
+  assert.equal(r.status, 'steps_missing_pin');
+  assert.equal(env.sent.length, 0);
+  const res = fakeRes();
+  await handlerFor(env)(fakeReq({ body: JSON.stringify({ pin: PIN }) }), res);
+  assert.equal(res.status, 500);
+  assert.match(res.body, /steps_missing_pin/);
+  assert.ok(!res.body.includes(PIN));
+  assert.equal(env.sent.length, 0);
+  // no PIN: F15 still works
+  env.probes.answers.push(false, true);
+  assert.equal((await env.waker.wake({})).status, 'awake');
+});
+
+test('failed-auth map is bounded', async () => {
+  const env = fakeEnv();
+  const h = handlerFor(env);
+  for (let i = 0; i < 1500; i++) {
+    await h(fakeReq({ headers: { authorization: 'Bearer wrong' }, body: '{}', ip: `10.1.${i >> 8}.${i & 255}` }), fakeRes());
+  }
+  assert.ok(h._failsSize() <= 1000, `size ${h._failsSize()}`);
+  env.clock.advance(10 * 60_000);
+  await h(fakeReq({ headers: { authorization: 'Bearer wrong' }, body: '{}', ip: '10.9.9.9' }), fakeRes());
+  assert.equal(h._failsSize(), 1);
+});
+
+test('counter strictly increases within the same millisecond', async () => {
+  const env = fakeEnv();
+  const w = wake.createWaker({ ...env, sleep: async () => {} });
+  for (let i = 0; i < 3; i++) {
+    env.probes.answers.push(false, true);
+    assert.equal((await w.wake({})).status, 'awake');
+  }
+  const ctrs = env.sent.map((s) => s.buf.readBigUInt64BE(1));
+  assert.equal(ctrs.length, 3);
+  assert.ok(ctrs[0] < ctrs[1] && ctrs[1] < ctrs[2]);
+});
