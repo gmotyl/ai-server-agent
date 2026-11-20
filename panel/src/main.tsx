@@ -7,6 +7,7 @@ import { TopicList } from './components/TopicList'
 import { ScheduleList } from './components/ScheduleList'
 import { Memory } from './components/Memory'
 import { Settings } from './components/Settings'
+import { WakeSpock } from './components/WakeSpock'
 import { Toast } from './components/Toast'
 import './index.css'
 
@@ -19,6 +20,7 @@ function App() {
       schedulesPanel={<ScheduleList />}
       memoryPanel={<Memory />}
       settingsPanel={<Settings />}
+      wakePanel={<WakeSpock />}
     />
   )
 }
