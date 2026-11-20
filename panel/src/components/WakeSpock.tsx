@@ -71,6 +71,9 @@ export function WakeSpock() {
       } else if (res.status === 409) {
         setMessage('A wake is already running')
         setPhase('error')
+      } else if (res.status === 503) {
+        setMessage('Wake is not configured on the server')
+        setPhase('error')
       } else if (res.ok && (data.status === 'awake' || data.status === 'already_awake')) {
         setMessage(data.status === 'already_awake' ? 'SPOCK is already awake' : 'SPOCK is awake')
         setPhase('awake')

@@ -82,4 +82,40 @@ describe('WakeSpock', () => {
     expect(setItem).not.toHaveBeenCalled()
     expect(document.body.innerHTML).not.toContain('1234')
   })
+
+  it('shows a specific message for 503', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(503, { error: 'Wake disabled' })))
+    render(<WakeSpock />)
+    fill('Wake token', 'tok')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /wake spock/i })) })
+    expect(screen.getByText('Wake is not configured on the server')).toBeTruthy()
+  })
+
+  it('never leaks PIN or token to console, cookie or URL', async () => {
+    const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map(m => vi.spyOn(console, m).mockImplementation(() => {}))
+    const cookie = document.cookie
+    const href = location.href
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(500, { error: 'boom' })))
+    render(<WakeSpock />)
+    fill('Wake token', 'secret-token-xyz')
+    fill('PIN', '987654')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /wake spock/i })) })
+    const logged = JSON.stringify(spies.flatMap(s => s.mock.calls))
+    expect(logged).not.toContain('987654')
+    expect(logged).not.toContain('secret-token-xyz')
+    expect(document.cookie).toBe(cookie)
+    expect(location.href).toBe(href)
+    expect(location.hash).toBe('')
+    spies.forEach(s => s.mockRestore())
+  })
+
+  it('does not auto-retry after a timeout', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { status: 'timeout', elapsedMs: 120000 }))
+    vi.stubGlobal('fetch', fetchMock)
+    render(<WakeSpock />)
+    fill('Wake token', 'tok')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /wake spock/i })) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(600_000) })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
 })
