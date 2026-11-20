@@ -8,6 +8,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
+const dgram = require('dgram');
+const spockWake = require('./spock-wake.cjs');
 
 // --- Config ---
 
@@ -102,6 +104,28 @@ function writeJSON(filePath, data) {
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2) + '\n');
   fs.renameSync(tmp, filePath);
 }
+
+// --- SPOCK wake (own token, own CORS policy; see spock-wake.cjs) ---
+
+const spockCfg = (k) => config[k] || process.env[k] || '';
+const SPOCK_WAKE_TOKEN = spockCfg('SPOCK_WAKE_TOKEN');
+const spockWaker = spockWake.createWaker({
+  config: {
+    FRAME_KEY: spockCfg('FRAME_KEY'), ESP_IP: spockCfg('ESP_IP'), ESP_PORT: spockCfg('ESP_PORT'),
+    SPOCK_URL: spockCfg('SPOCK_URL'), SPOCK_STEPS_JSON: spockCfg('SPOCK_STEPS_JSON'),
+    SPOCK_WAKE_TIMEOUT_MS: spockCfg('SPOCK_WAKE_TIMEOUT_MS'), SPOCK_PIN_COOLDOWN_MS: spockCfg('SPOCK_PIN_COOLDOWN_MS'),
+  },
+  dgram,
+  fetch: (...a) => fetch(...a),
+  log: (m) => console.log(`[panel] ${m}`),
+});
+const spockWakeHandler = spockWake.createWakeHandler({
+  waker: spockWaker,
+  token: SPOCK_WAKE_TOKEN,
+  allowedHosts: spockCfg('SPOCK_ALLOWED_HOSTS').split(',').map((h) => h.trim()).filter(Boolean),
+  log: (...a) => console.error('[panel]', ...a),
+});
+if (!SPOCK_WAKE_TOKEN) console.log('[panel] SPOCK_WAKE_TOKEN not set: /api/spock/wake disabled');
 
 // --- Auth ---
 
@@ -755,6 +779,9 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
   const method = req.method;
+
+  // SPOCK wake: handled before the global CORS block and ADMIN_TOKEN gate
+  if (spockWake.isWakePath(pathname)) return spockWakeHandler(req, res);
 
   // CORS for local dev
   res.setHeader('Access-Control-Allow-Origin', '*');

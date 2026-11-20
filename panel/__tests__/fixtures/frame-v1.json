@@ -1,0 +1,15 @@
+{
+  "description": "Wire format v1 shared vector: ver|counter(8,BE)|ciphertext|tag(16); AES-256-GCM, nonce=4 zero bytes||counter, AAD=ver||counter",
+  "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "counter": "4328719365",
+  "plaintextHex": "016a0201f40129040f0204b0030431326162",
+  "frameHex": "0100000001020304057669e9545a596353edc754c1bc705071aaead439b20a14a6b8eef99b0794ea91be1a",
+  "ops": [
+    "tap F15",
+    "pause 500 ms",
+    "tap Escape",
+    "Win+L",
+    "pause 1200 ms",
+    "type \"12ab\""
+  ]
+}
