@@ -87,8 +87,9 @@ function createWaker(deps) {
 
   async function probe() {
     try {
+      // Any HTTP reply means WSL is up: the panel answers 401 to non-localhost callers.
       const r = await doFetch(`${spockUrl}/api/health`, { signal: AbortSignal.timeout(2500) });
-      return !!(r && r.ok);
+      return !!(r && r.status);
     } catch { return false; }
   }
 

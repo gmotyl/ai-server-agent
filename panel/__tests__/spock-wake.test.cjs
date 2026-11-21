@@ -41,7 +41,10 @@ function fakeEnv(over = {}) {
       probes.url = url;
       const ans = probes.answers.length ? probes.answers.shift() : (over.defaultAnswer ?? false);
       if (ans instanceof Error) throw ans;
-      return { ok: ans };
+      // false = no HTTP reply (asleep); true = 200; a number = that HTTP status
+      if (ans === false) throw new Error('timeout');
+      const status = ans === true ? 200 : ans;
+      return { ok: status >= 200 && status < 300, status };
     },
     sleep: async (ms) => { t += ms; },
     log: (...a) => logs.push(a.join(' ')),
@@ -88,6 +91,14 @@ test('skips frame when panel already answers', async () => {
   assert.equal(r.status, 'already_awake');
   assert.equal(env.sent.length, 0);
   assert.equal(env.probes.url, 'http://spock.ts.net:3000/api/health');
+});
+
+test('counts any HTTP status as awake (panel answers 401 to non-localhost)', async () => {
+  const env = fakeEnv();
+  env.probes.answers.push(401);
+  const r = await env.waker.wake({});
+  assert.equal(r.status, 'already_awake');
+  assert.equal(env.sent.length, 0);
 });
 
 test('sends Space-only steps without a PIN', async () => {
