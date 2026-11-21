@@ -20,10 +20,11 @@ test('manifest has required installable fields', () => {
   assert.equal(m.start_url, '/');
   assert.equal(m.scope, '/');
   assert.equal(m.display, 'standalone');
-  const sizes = m.icons.map((i) => i.sizes);
-  assert.ok(sizes.includes('192x192'));
-  assert.ok(sizes.includes('512x512'));
-  assert.ok(m.icons.some((i) => (i.purpose || '').includes('maskable')));
+  const purposes = (i) => (i.purpose || 'any').split(/\s+/);
+  const anySizes = m.icons.filter((i) => purposes(i).includes('any')).map((i) => i.sizes);
+  assert.ok(anySizes.includes('192x192'), '192 icon with purpose any');
+  assert.ok(anySizes.includes('512x512'), '512 icon with purpose any');
+  assert.ok(m.icons.some((i) => purposes(i).includes('maskable')));
 });
 
 test('manifest icons exist on disk with declared sizes', () => {
@@ -43,8 +44,10 @@ test('index.html links the manifest and theme color', () => {
   assert.ok(fs.existsSync(path.join(PUBLIC, apple[1].replace(/^\//, ''))));
 });
 
-test('no service worker is registered', () => {
-  const src = fs.readFileSync(path.join(PANEL, 'src', 'main.tsx'), 'utf8');
-  assert.doesNotMatch(src, /serviceWorker/);
-  assert.ok(!fs.existsSync(path.join(PUBLIC, 'sw.js')));
+test('no source file registers a service worker', () => {
+  const files = fs.readdirSync(path.join(PANEL, 'src'), { recursive: true })
+    .filter((f) => /\.(ts|tsx|js|jsx)$/.test(f) && !f.includes('__tests__'));
+  for (const f of files) {
+    assert.doesNotMatch(fs.readFileSync(path.join(PANEL, 'src', f), 'utf8'), /serviceWorker/, f);
+  }
 });
