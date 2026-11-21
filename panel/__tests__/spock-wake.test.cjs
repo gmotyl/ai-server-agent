@@ -90,7 +90,7 @@ test('skips frame when panel already answers', async () => {
   assert.equal(env.probes.url, 'http://spock.ts.net:3000/api/health');
 });
 
-test('sends F15-only steps without a PIN', async () => {
+test('sends Space-only steps without a PIN', async () => {
   const env = fakeEnv();
   env.probes.answers.push(false, false, true);
   const r = await env.waker.wake({});
@@ -98,7 +98,7 @@ test('sends F15-only steps without a PIN', async () => {
   assert.equal(env.sent.length, 1);
   assert.equal(env.sent[0].ip, '192.168.1.50');
   assert.equal(env.sent[0].port, 9);
-  assert.equal(open(env.sent[0].buf, KEY_HEX).toString('hex'), '016a');
+  assert.equal(open(env.sent[0].buf, KEY_HEX).toString('hex'), '012c');
   assert.ok(r.elapsedMs >= 6000);
 });
 
@@ -108,6 +108,8 @@ test('never logs or returns the PIN', async () => {
   const r = await env.waker.wake({ pin: PIN });
   const pt = open(env.sent[0].buf, KEY_HEX);
   assert.ok(pt.includes(Buffer.from(PIN)), 'PIN is sealed into the frame');
+  // default steps: Space, pause 2000, Escape, pause 1000, then the PIN
+  assert.equal(pt.subarray(0, 10).toString('hex'), '012c0207d001290203e8');
   assert.ok(!JSON.stringify(r).includes(PIN));
   assert.ok(!env.logs.join('\n').includes(PIN));
   // handler path: response and logs stay PIN-free, even when logging an error containing it
@@ -210,7 +212,7 @@ test('refuses PIN wake when steps have no $PIN text step', async () => {
   assert.match(res.body, /steps_missing_pin/);
   assert.ok(!res.body.includes(PIN));
   assert.equal(env.sent.length, 0);
-  // no PIN: F15 still works
+  // no PIN: Space still works
   env.probes.answers.push(false, true);
   assert.equal((await env.waker.wake({})).status, 'awake');
 });

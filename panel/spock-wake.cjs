@@ -6,7 +6,7 @@ const crypto = require('crypto');
 
 const VER = 0x01;
 const OP = { KEY: 0x01, PAUSE: 0x02, TEXT: 0x03, GUI: 0x04 };
-const HID = { F15: 0x6a, ESCAPE: 0x29, SPACE: 0x2c, ENTER: 0x28 };
+const HID = { ESCAPE: 0x29, SPACE: 0x2c, ENTER: 0x28 };
 const PROBE_INTERVAL_MS = 3000;
 const BODY_MAX = 1024;
 const PIN_RE = /^[\x20-\x7e]{1,64}$/;
@@ -44,11 +44,12 @@ function encodeSteps(steps, pin) {
   }));
 }
 
+// Space wakes from Modern Standby (F15 does not); Escape cancels the Hello scan and focuses the PIN field.
 const DEFAULT_PIN_STEPS = [
-  { key: HID.F15 }, { pause: 1500 }, { key: HID.ESCAPE }, { pause: 500 },
-  { key: HID.SPACE }, { pause: 1200 }, { text: '$PIN' }, { key: HID.ENTER },
+  { key: HID.SPACE }, { pause: 2000 }, { key: HID.ESCAPE }, { pause: 1000 },
+  { text: '$PIN' }, { key: HID.ENTER },
 ];
-const F15_STEPS = [{ key: HID.F15 }];
+const WAKE_STEPS = [{ key: HID.SPACE }];
 
 // --- Waker ---
 
@@ -117,7 +118,7 @@ function createWaker(deps) {
     const t0 = now();
     try {
       if (await probe()) return { status: 'already_awake', elapsedMs: now() - t0 };
-      const steps = pin ? pinSteps : F15_STEPS;
+      const steps = pin ? pinSteps : WAKE_STEPS;
       const frame = sealFrame(key, nextCounter(), encodeSteps(steps, pin));
       try {
         await sendUdp(frame);
@@ -125,7 +126,7 @@ function createWaker(deps) {
         log('spock-wake: frame not sent:', err);
         return { status: 'not_sent', message: 'frame not sent' };
       }
-      log(`spock-wake: frame sent (${pin ? 'with text' : 'F15'}), polling`);
+      log(`spock-wake: frame sent (${pin ? 'with text' : 'wake key'}), polling`);
       let probes = 0;
       while (now() - t0 < timeoutMs) {
         await sleep(PROBE_INTERVAL_MS);
