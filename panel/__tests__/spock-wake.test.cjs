@@ -26,8 +26,13 @@ function open(frame, keyHex) {
 function fakeFs(files = {}) {
   const f = { files: { ...files }, writes: [] };
   f.readFileSync = (p) => { if (!(p in f.files)) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); return f.files[p]; };
+  f.ops = [];
   f.writeFileSync = (p, d) => { f.writes.push(p); f.files[p] = String(d); };
-  f.renameSync = (a, b) => { f.files[b] = f.files[a]; delete f.files[a]; };
+  f.openSync = (p) => { f.ops.push(`open ${p}`); if (!(p in f.files)) f.files[p] = ''; return { p }; };
+  f.writeSync = (fd, d) => { f.ops.push(`write ${fd.p}`); f.writes.push(fd.p); f.files[fd.p] += String(d); };
+  f.fsyncSync = (fd) => { f.ops.push(`fsync ${fd.p}`); };
+  f.closeSync = () => {};
+  f.renameSync = (a, b) => { f.ops.push(`rename ${b}`); f.files[b] = f.files[a]; delete f.files[a]; };
   f.mkdirSync = () => {};
   return f;
 }
@@ -127,7 +132,7 @@ test('skips frame when panel already answers', async () => {
   assert.equal(env.probes.url, 'http://spock.ts.net:3000/api/health');
 });
 
-test('counts HTTP status below 500 as awake (panel answers 401 to non-localhost)', async () => {
+test('counts 401 as awake (panel answers 401 to non-localhost)', async () => {
   const env = fakeEnv();
   env.probes.answers.push(401);
   const r = await env.waker.wake({});
@@ -135,13 +140,13 @@ test('counts HTTP status below 500 as awake (panel answers 401 to non-localhost)
   assert.equal(env.sent.length, 0);
 });
 
-test('5xx gateway reply does not count as awake', async () => {
+test('only 200 or 401 count as awake (5xx gateway, 404, 302 do not)', async () => {
   const env = fakeEnv();
-  env.probes.answers.push(502, 503, 200);
+  env.probes.answers.push(502, 503, 404, 302, 200);
   const r = await env.waker.wake({});
   assert.equal(r.status, 'awake');
   assert.equal(env.sent.length, 1);
-  assert.equal(r.probes, 2);
+  assert.equal(r.probes, 4);
 });
 
 test('sends Space-only steps without a PIN', async () => {
@@ -321,12 +326,88 @@ test('counter is written before the frame is sent; unwritable counter blocks sen
   await env.waker.wake({});
   assert.equal(persistedAtSend.trim(), String(env.sent[0].buf.readBigUInt64BE(1)));
   const bad = fakeFs();
-  bad.writeFileSync = () => { throw new Error('EROFS'); };
+  bad.openSync = () => { throw new Error('EROFS'); };
   const env2 = fakeEnv({ fs: bad });
   env2.probes.answers.push(false);
   const r = await env2.waker.wake({});
   assert.equal(r.status, 'not_sent');
   assert.equal(env2.sent.length, 0);
+});
+
+test('counter write fsyncs the temp file before rename and the directory after', async () => {
+  const fs1 = fakeFs({ '/data': '' });
+  const env = fakeEnv({ fs: fs1 });
+  env.probes.answers.push(false, true);
+  await env.waker.wake({});
+  assert.deepEqual(fs1.ops, ['open /data/ctr.tmp', 'write /data/ctr.tmp', 'fsync /data/ctr.tmp', 'rename /data/ctr', 'open /data', 'fsync /data']);
+  // directory fsync is best effort
+  const fs2 = fakeFs();
+  const open = fs2.openSync;
+  fs2.openSync = (p, ...a) => { if (p === '/data') throw new Error('EISDIR'); return open(p, ...a); };
+  const env2 = fakeEnv({ fs: fs2 });
+  env2.probes.answers.push(false, true);
+  assert.equal((await env2.waker.wake({})).status, 'awake');
+});
+
+test('unreadable or invalid counter file blocks the send; missing file is a fresh start', async () => {
+  for (const content of ['garbage', '', '12x', '-5']) {
+    const env = fakeEnv({ fs: fakeFs({ '/data/ctr': content }) });
+    env.probes.answers.push(false);
+    const r = await env.waker.wake({});
+    assert.equal(r.status, 'not_sent', JSON.stringify(content));
+    assert.equal(env.sent.length, 0);
+    assert.match(env.logs.join('\n'), /not sent/);
+  }
+  const eacces = fakeFs();
+  eacces.readFileSync = () => { throw Object.assign(new Error('EACCES'), { code: 'EACCES' }); };
+  const env = fakeEnv({ fs: eacces });
+  env.probes.answers.push(false);
+  assert.equal((await env.waker.wake({})).status, 'not_sent');
+  assert.equal(env.sent.length, 0);
+  const fresh = fakeEnv({ fs: fakeFs() });
+  fresh.probes.answers.push(false, true);
+  assert.equal((await fresh.waker.wake({})).status, 'awake');
+});
+
+test('socket close throwing on error still settles and clears busy', async () => {
+  const env = fakeEnv();
+  let closes = 0;
+  env.dgram = {
+    createSocket: () => {
+      const s = new EventEmitter();
+      s.send = () => { setImmediate(() => s.emit('error', new Error('EADDRINUSE'))); };
+      s.close = () => { closes++; throw new Error('Not running'); };
+      return s;
+    },
+  };
+  env.waker = wake.createWaker(env);
+  env.probes.answers.push(false);
+  assert.equal((await env.waker.wake({})).status, 'not_sent');
+  assert.ok(closes >= 1);
+  env.probes.answers.push(true);
+  assert.equal((await env.waker.wake({})).status, 'already_awake');
+});
+
+test('wake timeout starts after the UDP send, not before the preflight probe', async () => {
+  const env = fakeEnv({ config: { SPOCK_WAKE_TIMEOUT_MS: '4000' } });
+  let n = 0;
+  env.fetch = async () => { n++; if (n === 1) env.clock.advance(3000); throw new Error('timeout'); };
+  env.waker = wake.createWaker(env);
+  const r = await env.waker.wake({});
+  assert.equal(r.status, 'timeout');
+  assert.deepEqual(env.sleeps, [3000, 1000]);
+});
+
+test('garbage numeric config falls back to defaults', async () => {
+  const env = fakeEnv({ config: { SPOCK_WAKE_TIMEOUT_MS: 'garbage', SPOCK_PIN_COOLDOWN_MS: '-1', ESP_PORT: 'NaN' } });
+  const r = await env.waker.wake({ pin: PIN });
+  assert.equal(r.status, 'timeout');
+  assert.equal(env.sleeps.reduce((a, b) => a + b, 0), 120000);
+  assert.equal(r.retryAfterMs, 300000);
+  assert.equal(env.sent[0].port, 9);
+  const z = fakeEnv({ config: { SPOCK_WAKE_TIMEOUT_MS: '0' } });
+  assert.equal((await z.waker.wake({})).status, 'timeout');
+  assert.equal(z.sleeps.reduce((a, b) => a + b, 0), 120000);
 });
 
 test('socket error (bind failure) settles the send and clears busy', async () => {
@@ -369,15 +450,18 @@ test('deadline bounds sleeps and ignores a probe answer after it', async () => {
   assert.equal(r2.status, 'timeout');
 });
 
-test('PIN requires an https or localhost Origin', async () => {
+test('every wake requires an https or localhost Origin', async () => {
   for (const origin of ['http://foundation1:3000', undefined]) {
-    const env = fakeEnv();
-    const res = fakeRes();
-    const headers = origin ? { origin, host: 'foundation1:3000' } : { origin: undefined };
-    await handlerFor(env)(fakeReq({ headers, body: JSON.stringify({ pin: PIN }) }), res);
-    assert.equal(res.status, 403, String(origin));
-    assert.equal(JSON.parse(res.body).error, 'https_required');
-    assert.equal(env.sent.length, 0);
+    for (const body of [JSON.stringify({ pin: PIN }), '{}']) {
+      const env = fakeEnv();
+      const res = fakeRes();
+      const headers = origin ? { origin, host: 'foundation1:3000' } : { origin: undefined };
+      await handlerFor(env)(fakeReq({ headers, body }), res);
+      assert.equal(res.status, 403, `${origin} ${body}`);
+      assert.equal(JSON.parse(res.body).error, 'https_required');
+      assert.equal(env.sent.length, 0);
+      assert.equal(env.probes.calls, 0);
+    }
   }
   for (const [origin, host] of [['https://foundation1:3000', 'foundation1:3000'], ['http://localhost:5173', 'localhost:5173'], ['http://127.0.0.1:3000', '127.0.0.1:3000']]) {
     const env = fakeEnv();
@@ -386,12 +470,6 @@ test('PIN requires an https or localhost Origin', async () => {
     await handlerFor(env, { allowedHosts: [host] })(fakeReq({ headers: { origin, host }, body: JSON.stringify({ pin: PIN }) }), res);
     assert.equal(res.status, 200, origin);
   }
-  // PIN-less wake over plain HTTP still works
-  const env = fakeEnv();
-  env.probes.answers.push(true);
-  const res = fakeRes();
-  await handlerFor(env)(fakeReq({ headers: { origin: 'http://foundation1:3000' }, body: '{}' }), res);
-  assert.equal(res.status, 200);
 });
 
 test('stale failed-auth record is reset before counting', async () => {
@@ -416,6 +494,7 @@ test('lockout and PIN cooldown responses carry retryAfterMs', async () => {
   await h(fakeReq({ body: '{}' }), locked);
   assert.equal(locked.status, 429);
   assert.equal(JSON.parse(locked.body).retryAfterMs, 50_000);
+  assert.equal(JSON.parse(locked.body).status, 'locked_out');
   // PIN timeout reports the cooldown, and the next PIN request is refused with the remainder
   const t = fakeRes();
   await h(fakeReq({ body: JSON.stringify({ pin: PIN }), ip: '10.0.0.77' }), t);
@@ -439,7 +518,7 @@ test('oversized body: client receives 413 over a real socket', async () => {
     const got = await new Promise((resolve, reject) => {
       const req = http.request({
         host: '127.0.0.1', port, method: 'POST', path: '/api/spock/wake',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}`, 'content-length': Buffer.byteLength(body) },
+        headers: { 'content-type': 'application/json', origin: `https://127.0.0.1:${port}`, authorization: `Bearer ${TOKEN}`, 'content-length': Buffer.byteLength(body) },
       }, (res) => {
         let b = '';
         res.on('data', (c) => { b += c; });

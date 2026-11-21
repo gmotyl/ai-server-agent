@@ -3,6 +3,7 @@
 // then poll the tailnet health URL. Deps (dgram/fetch/clock) are injected for tests.
 
 const crypto = require('crypto');
+const path = require('path');
 
 const VER = 0x01;
 const OP = { KEY: 0x01, PAUSE: 0x02, TEXT: 0x03, GUI: 0x04 };
@@ -60,6 +61,12 @@ const WAKE_STEPS = [{ key: HID.SPACE }];
 
 // --- Waker ---
 
+// Positive integer or the default (NaN/garbage/<=0 would break the polling loop).
+function posInt(v, def) {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) && n > 0 ? n : def;
+}
+
 function createWaker(deps) {
   const cfg = deps.config || {};
   const dgram = deps.dgram;
@@ -69,9 +76,9 @@ function createWaker(deps) {
   const counterFile = cfg.SPOCK_COUNTER_FILE || '';
   const sleep = deps.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
   const baseLog = deps.log || (() => {});
-  const timeoutMs = parseInt(cfg.SPOCK_WAKE_TIMEOUT_MS || '120000', 10);
-  const cooldownMs = parseInt(cfg.SPOCK_PIN_COOLDOWN_MS || '300000', 10);
-  const espPort = parseInt(cfg.ESP_PORT || '9', 10);
+  const timeoutMs = posInt(cfg.SPOCK_WAKE_TIMEOUT_MS, 120000);
+  const cooldownMs = posInt(cfg.SPOCK_PIN_COOLDOWN_MS, 300000);
+  const espPort = posInt(cfg.ESP_PORT, 9);
   const keyHex = cfg.FRAME_KEY || '';
   const key = /^[0-9a-fA-F]{64}$/.test(keyHex) ? Buffer.from(keyHex, 'hex') : null;
   const spockUrl = (cfg.SPOCK_URL || '').replace(/\/+$/, '');
@@ -96,15 +103,35 @@ function createWaker(deps) {
 
   async function probe(ms = PROBE_TIMEOUT_MS) {
     try {
-      // Panel answers 401 to non-localhost callers, so any non-5xx reply means WSL is up;
-      // 5xx comes from a proxy/gateway in front of a dead backend.
+      // SPOCK's panel answers 200 locally and 401 to everyone else; anything else
+      // (proxy 5xx, redirects, 404) is not the panel.
       const r = await doFetch(`${spockUrl}/api/health`, { signal: AbortSignal.timeout(Math.max(1, ms)) });
-      return !!(r && r.status > 0 && r.status < 500);
+      return !!(r && (r.status === 200 || r.status === 401));
     } catch { return false; }
   }
 
+  // Missing file = fresh start; any other read error or bad content throws so nothing is sent.
   function readPersisted() {
-    try { return BigInt(String(fs.readFileSync(counterFile, 'utf8')).trim()); } catch { return 0n; }
+    let raw;
+    try { raw = fs.readFileSync(counterFile, 'utf8'); } catch (err) {
+      if (err && err.code === 'ENOENT') return 0n;
+      throw new Error(`counter file unreadable: ${err && err.code ? err.code : err}`);
+    }
+    const t = String(raw).trim();
+    if (!/^\d+$/.test(t)) throw new Error('counter file invalid');
+    return BigInt(t);
+  }
+
+  // temp + fsync + rename + dir fsync, so a crash cannot roll the counter back.
+  function persistCounter(c) {
+    const tmp = `${counterFile}.tmp`;
+    const fd = fs.openSync(tmp, 'w');
+    try { fs.writeSync(fd, `${c}\n`); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    fs.renameSync(tmp, counterFile);
+    try {
+      const dfd = fs.openSync(path.dirname(counterFile), 'r');
+      try { fs.fsyncSync(dfd); } finally { fs.closeSync(dfd); }
+    } catch { /* best effort: not all platforms fsync directories */ }
   }
 
   // Counter must never repeat for a key (GCM nonce): persisted across restarts and
@@ -114,11 +141,7 @@ function createWaker(deps) {
     const floor = counterFile ? readPersisted() : 0n;
     if (c <= floor) c = floor + 1n;
     if (c <= lastCounter) c = lastCounter + 1n;
-    if (counterFile) {
-      const tmp = `${counterFile}.tmp`;
-      fs.writeFileSync(tmp, `${c}\n`);
-      fs.renameSync(tmp, counterFile);
-    }
+    if (counterFile) persistCounter(c);
     lastCounter = c;
     return c;
   }
@@ -127,13 +150,15 @@ function createWaker(deps) {
     return new Promise((resolve, reject) => {
       const sock = dgram.createSocket('udp4');
       let done = false;
+      const close = () => { try { sock.close(); } catch { /* already closed */ } };
       const settle = (err) => {
         if (done) return;
         done = true;
-        try { sock.close(); } catch { /* already closed */ }
+        close();
         err ? reject(err) : resolve();
       };
-      if (sock.on) sock.on('error', settle);
+      // close on every error, even one after settling, so the socket is never leaked
+      if (sock.on) sock.on('error', (err) => { if (done) close(); else settle(err); });
       try { sock.send(buf, espPort, cfg.ESP_IP, (err) => settle(err || null)); } catch (err) { settle(err); }
     });
   }
@@ -148,7 +173,7 @@ function createWaker(deps) {
     busy = true;
     const log = logger(pin);
     const t0 = now();
-    const deadline = t0 + timeoutMs;
+    let deadline;
     try {
       if (await probe()) return { status: 'already_awake', elapsedMs: now() - t0 };
       const steps = pin ? pinSteps : WAKE_STEPS;
@@ -159,6 +184,8 @@ function createWaker(deps) {
         log('spock-wake: frame not sent:', err);
         return { status: 'not_sent', message: 'frame not sent' };
       }
+      // polling window starts after the send, not before the preflight probe
+      deadline = now() + timeoutMs;
       log(`spock-wake: frame sent (${pin ? 'with text' : 'wake key'}), polling`);
       let probes = 0;
       for (;;) {
@@ -240,7 +267,7 @@ function createWakeHandler({ waker, token, allowedHosts = [], now = Date.now, lo
     res.end(JSON.stringify(data));
   }
 
-  // PIN only from pages served over HTTPS (or localhost), so it never crosses the LAN in cleartext.
+  // Token and PIN only from pages served over HTTPS (or localhost): never cleartext on the LAN.
   function secureOrigin(req) {
     const origin = req.headers['origin'] || '';
     if (/^https:\/\//i.test(origin)) return true;
@@ -267,10 +294,11 @@ function createWakeHandler({ waker, token, allowedHosts = [], now = Date.now, lo
     if (pathname !== '/api/spock/wake') return send(res, 404, { error: 'Not found' });
     if (!allowedHosts.length || !hostAllowed(req) || !sameOrigin(req)) return send(res, 403, { error: 'Forbidden' });
     if (req.method !== 'POST') return send(res, 405, { error: 'Method not allowed' });
+    if (!secureOrigin(req)) return send(res, 403, { error: 'https_required' });
 
     const ip = (req.socket && req.socket.remoteAddress) || '?';
     const f = fails.get(ip);
-    if (f && f.until > now()) return send(res, 429, { error: 'Too many failed attempts', retryAfterMs: f.until - now() });
+    if (f && f.until > now()) return send(res, 429, { status: 'locked_out', error: 'Too many failed attempts', retryAfterMs: f.until - now() });
     if (!bearerOk(req, token)) {
       // a stale streak (older than lockMs) starts over
       const cur = f && f.until === 0 && now() - f.at <= lockMs ? f : { n: 0, until: 0, at: 0 };
@@ -292,7 +320,6 @@ function createWakeHandler({ waker, token, allowedHosts = [], now = Date.now, lo
     }
     let pin;
     if (body && body.pin !== undefined && body.pin !== '') {
-      if (!secureOrigin(req)) return send(res, 403, { error: 'https_required' });
       if (typeof body.pin !== 'string' || !PIN_RE.test(body.pin)) return send(res, 400, { error: 'Invalid PIN' });
       pin = body.pin;
     }
