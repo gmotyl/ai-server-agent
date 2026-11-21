@@ -1,7 +1,8 @@
 # Wake SPOCK
 
 The panel's **Wake SPOCK** tab asks an ESP32 BLE keyboard to wake the Windows PC SPOCK and,
-optionally, type the Windows PIN. Flow:
+optionally, type the Windows PIN. It works only over HTTPS (the NAS's `tailscale serve`
+URL) or localhost; see *HTTPS only*. Flow:
 
 1. `POST /api/spock/wake` (Bearer `SPOCK_WAKE_TOKEN`, JSON body `{}` or `{"pin":"…"}`).
 2. Probe `${SPOCK_URL}/api/health`; if it already answers, stop (`already_awake`).
@@ -14,7 +15,10 @@ Code: `panel/spock-wake.cjs` (waker + HTTP handler), wired in `panel/server.cjs`
 
 ## Configuration
 
-Set in `config/agent.conf` (or the environment; the config file wins).
+Set in `config/agent.conf` (or the environment; the config file wins). In
+`config/agent.conf.example` these lines are commented out so that `start.sh` sourcing a copied
+example never overrides values set only in the environment: uncomment and fill the ones you
+keep in the config file.
 
 | Variable | Required | Default | Meaning |
 |---|---|---|---|
@@ -23,11 +27,14 @@ Set in `config/agent.conf` (or the environment; the config file wins).
 | `FRAME_KEY` | yes | — | 64 hex chars, AES-256 key shared with the ESP32 firmware. |
 | `ESP_IP` | yes | — | ESP32 waker IP. |
 | `ESP_PORT` | no | `9` | ESP32 UDP port. |
+
+Non-numeric or ≤ 0 values for `ESP_PORT`, `SPOCK_WAKE_TIMEOUT_MS` and `SPOCK_PIN_COOLDOWN_MS`
+fall back to the defaults.
 | `SPOCK_URL` | yes | — | SPOCK panel base URL, probed at `/api/health`. |
 | `SPOCK_STEPS_JSON` | no | built-in | JSON step list for PIN wakes (see below). Invalid JSON/steps: wake reports `not_configured`. |
-| `SPOCK_WAKE_TIMEOUT_MS` | no | `120000` | Probe window after the frame is sent. |
+| `SPOCK_WAKE_TIMEOUT_MS` | no | `120000` | Probe window, starting after the frame is sent. |
 | `SPOCK_PIN_COOLDOWN_MS` | no | `300000` | After a PIN wake times out, further PIN wakes are refused this long (PIN-less wakes still allowed). |
-| `SPOCK_COUNTER_FILE` | no | `$AGENT_HOME/data/spock-wake-counter` | Last frame counter used (see *Counter*). Must be writable; if not, nothing is sent. |
+| `SPOCK_COUNTER_FILE` | no | `$AGENT_HOME/data/spock-wake-counter` | Last frame counter used (see *Counter*). Must be readable and writable; if not, nothing is sent. |
 
 If any required wake variable (`FRAME_KEY`, `ESP_IP`, `SPOCK_URL`) is missing the route answers 503.
 
@@ -37,11 +44,12 @@ The `Host` header must match an entry exactly, or match it after dropping the po
 address the panel is opened from, e.g.:
 
 ```
-SPOCK_ALLOWED_HOSTS="foundation1.tailXXXX.ts.net,192.168.10.155:3000"
+SPOCK_ALLOWED_HOSTS="foundation1.tailXXXX.ts.net"
 ```
 
 - the tailnet name served by `tailscale serve` (HTTPS, port 443 implied);
-- the LAN address `192.168.10.155:3000` (plain HTTP, PIN-less wakes only);
+- the LAN address `192.168.10.155:3000` only if you reach the panel there through an HTTPS proxy
+  (plain HTTP is refused, see below);
 - `localhost:5173` when testing through the Vite dev server.
 
 A missing entry gives **403 Forbidden**. Requests with an `Origin` header must also be same-origin.
@@ -60,11 +68,13 @@ Each step is an object with **exactly one** of:
 A PIN-less wake always sends just Space. The default PIN flow is Space, pause 2000, Escape,
 pause 1000, `$PIN`, Enter. Custom steps without a `{"text":"$PIN"}` step refuse PIN wakes.
 
-## HTTPS and the PIN
+## HTTPS only
 
-The PIN is only accepted when the request's `Origin` is `https://…` or a localhost origin;
-otherwise the route answers **403 `{"error":"https_required"}`**. The UI disables the PIN field
-when the page is not a secure context. PIN-less wakes work over plain HTTP.
+The wake token (and PIN) must never cross the LAN in cleartext, so **every** wake request, with
+or without a PIN, needs an `Origin` of `https://…` or a localhost origin (`http://localhost`,
+`127.0.0.1`, `[::1]`); otherwise the route answers **403 `{"error":"https_required"}`**.
+A missing `Origin` is refused too (scripts must send one). The UI disables the whole wake form
+when the page is not a secure context ("Wake SPOCK needs the HTTPS (tailnet) URL").
 
 Serve the panel over HTTPS on the tailnet from the NAS:
 
@@ -79,21 +89,24 @@ Then open `https://<nas>.<tailnet>.ts.net/` and add that hostname to `SPOCK_ALLO
 - 5 bad tokens from one IP (a streak resets after 60 s without failures) lock that IP out for 60 s (429, all wakes).
 - A PIN wake that times out starts the PIN cooldown (429 `cooldown` for PIN wakes only).
 - Both 429 responses, and a PIN timeout, carry `retryAfterMs`; the UI counts down from it.
+  The lockout response has `status: "locked_out"`, the PIN cooldown `status: "cooldown"`.
 - One wake at a time (409 `busy`).
 
 ## Counter
 
 The frame counter is the GCM nonce, so it must never repeat for a given `FRAME_KEY`. The
 panel uses `max(Date.now(), last persisted + 1)` and writes it to `SPOCK_COUNTER_FILE`
-before sending, so restarts and clock steps backwards do not reuse a nonce.
+before sending (temp file, fsync, rename, directory fsync), so restarts, crashes and clock steps
+backwards do not reuse a nonce. A missing file is a fresh start; an unreadable file or one that
+is not a plain non-negative integer blocks sending (`not_sent`, logged) until fixed.
 
 **`FRAME_KEY` must have exactly one sender.** Two panels (or tools) sharing a key can produce
 the same counter, which breaks AES-GCM. Give each sender its own key.
 
 ## Known limitation: panel liveness is not Windows sign-in
 
-"Awake" means SPOCK's panel answered `/api/health` (any status < 500; it returns 401 to
-non-localhost callers). That proves the machine and WSL are up, not that the Windows PIN was
+"Awake" means SPOCK's panel answered `/api/health` with 200 or 401 (it returns 401 to
+non-localhost callers; anything else, such as a proxy 5xx, is not the panel). That proves the machine and WSL are up, not that the Windows PIN was
 accepted or that a user is signed in: WSL and the panel can run before sign-in, and a wrong
 PIN still leaves the panel reachable. Conversely, a correct PIN can end in `timeout` if WSL or
 Windows Tailscale (not in unattended mode) only starts after sign-in. After a PIN wake, check
