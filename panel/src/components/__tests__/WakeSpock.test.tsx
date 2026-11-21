@@ -16,6 +16,7 @@ describe('WakeSpock', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     resetWakeStore()
+    localStorage.clear()
     Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true })
   })
   afterEach(() => {
@@ -80,9 +81,7 @@ describe('WakeSpock', () => {
     fill('Wake token', 'tok')
     fill('PIN', '1234')
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /wake spock/i })) })
-    // PIN cleared after the request: a PIN-less wake is allowed
-    expect((screen.getByRole('button', { name: /wake spock/i }) as HTMLButtonElement).disabled).toBe(false)
-    fill('PIN', '1234')
+    // saved PIN stays: PIN wake blocked, clearing the PIN allows a PIN-less wake
     expect((screen.getByRole('button', { name: /wake spock/i }) as HTMLButtonElement).disabled).toBe(true)
     fill('PIN', '')
     expect((screen.getByRole('button', { name: /wake spock/i }) as HTMLButtonElement).disabled).toBe(false)
@@ -162,20 +161,6 @@ describe('WakeSpock', () => {
     expect(screen.getByText('Wake SPOCK needs the HTTPS (tailnet) URL')).toBeTruthy()
   })
 
-  it('clears the PIN field after the request', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { status: 'timeout', elapsedMs: 120000, message: `${PIN_WARNING}. x` })))
-    const setItem = vi.spyOn(Storage.prototype, 'setItem')
-    render(<WakeSpock />)
-    fill('Wake token', 'tok')
-    fill('PIN', '1234')
-    expect((screen.getByLabelText('PIN') as HTMLInputElement).value).toBe('1234')
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /wake spock/i })) })
-
-    expect((screen.getByLabelText('PIN') as HTMLInputElement).value).toBe('')
-    expect(setItem).not.toHaveBeenCalled()
-    expect(document.body.innerHTML).not.toContain('1234')
-  })
-
   it('shows a specific message for 503', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(503, { error: 'Wake disabled' })))
     render(<WakeSpock />)
@@ -210,5 +195,28 @@ describe('WakeSpock', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /wake spock/i })) })
     await act(async () => { await vi.advanceTimersByTimeAsync(600_000) })
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+  it('remembers token and PIN in localStorage across remounts', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { status: 'awake', elapsedMs: 1000 })))
+    const first = render(<WakeSpock />)
+    fill('Wake token', 'tok')
+    fill('PIN', '1234')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /wake spock/i })) })
+    expect((screen.getByLabelText('PIN') as HTMLInputElement).value).toBe('1234')
+    first.unmount()
+    render(<WakeSpock />)
+    expect((screen.getByLabelText('Wake token') as HTMLInputElement).value).toBe('tok')
+    expect((screen.getByLabelText('PIN') as HTMLInputElement).value).toBe('1234')
+  })
+
+  it('forget clears saved token and PIN', () => {
+    localStorage.setItem('spockWakeToken', 'tok')
+    localStorage.setItem('spockWakePin', '1234')
+    render(<WakeSpock />)
+    fireEvent.click(screen.getByRole('button', { name: /forget/i }))
+    expect(localStorage.getItem('spockWakeToken')).toBeNull()
+    expect(localStorage.getItem('spockWakePin')).toBeNull()
+    expect((screen.getByLabelText('Wake token') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('PIN') as HTMLInputElement).value).toBe('')
   })
 })

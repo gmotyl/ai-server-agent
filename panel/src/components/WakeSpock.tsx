@@ -122,11 +122,28 @@ async function startWake(token: string, pin: string) {
 
 const fmt = (ms: number) => `${Math.max(0, Math.ceil(ms / 1000))}s`
 
-// The wake token and PIN live in component state only: never in storage, cookies, URL or the module store.
+// Token and PIN are remembered in this device's localStorage (HTTPS origin only) so the phone app is one tap.
+const TOKEN_KEY = 'spockWakeToken'
+const PIN_KEY = 'spockWakePin'
+
+function load(key: string): string {
+  try { return localStorage.getItem(key) ?? '' } catch { return '' }
+}
+
+function save(key: string, value: string) {
+  try {
+    if (value) localStorage.setItem(key, value)
+    else localStorage.removeItem(key)
+  } catch { /* storage unavailable: keep in memory only */ }
+}
+
 export function WakeSpock() {
   const s = useSyncExternalStore(subscribe, snapshot)
-  const [token, setToken] = useState('')
-  const [pin, setPin] = useState('')
+  const [token, setTokenState] = useState(() => load(TOKEN_KEY))
+  const [pin, setPinState] = useState(() => load(PIN_KEY))
+  const setToken = (v: string) => { setTokenState(v); save(TOKEN_KEY, v) }
+  const setPin = (v: string) => { setPinState(v); save(PIN_KEY, v) }
+  const forget = () => { setToken(''); setPin('') }
   const [now, setNow] = useState(() => Date.now())
   const secure = typeof window !== 'undefined' && !!window.isSecureContext
 
@@ -144,10 +161,8 @@ export function WakeSpock() {
 
   const wake = () => {
     if (!secure) return
-    const usedPin = pin
-    setPin('')
     setNow(Date.now())
-    void startWake(token, usedPin)
+    void startWake(token, pin)
   }
 
   const elapsed = waking ? now - s.startedAt : s.finalMs
@@ -177,7 +192,7 @@ export function WakeSpock() {
             value={token}
             disabled={waking || !secure}
             onChange={e => setToken(e.target.value)}
-            placeholder="SPOCK_WAKE_TOKEN (kept in memory only)"
+            placeholder="SPOCK_WAKE_TOKEN (saved on this device)"
           />
         </div>
         <div className="form-row">
@@ -192,7 +207,7 @@ export function WakeSpock() {
             value={pin}
             disabled={waking || !secure}
             onChange={e => setPin(e.target.value)}
-            placeholder="Windows PIN, if SPOCK is locked"
+            placeholder="Windows PIN (saved on this device)"
           />
         </div>
         {!secure && (
@@ -207,6 +222,9 @@ export function WakeSpock() {
           </button>
           {waking && (
             <button onClick={() => inflight?.abort()} className="btn-ghost">Cancel</button>
+          )}
+          {!waking && (token || pin) && (
+            <button onClick={forget} className="btn-ghost">Forget token &amp; PIN</button>
           )}
         </div>
 
