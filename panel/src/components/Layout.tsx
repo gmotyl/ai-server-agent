@@ -6,6 +6,11 @@ type Tab = 'topics' | 'schedules' | 'memory' | 'settings' | 'wake'
 
 const tabs: { id: Tab; label: string; icon: ReactNode }[] = [
   {
+    id: 'wake',
+    label: 'Wake SPOCK',
+    icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.5v6M4.5 4a5 5 0 1 0 7 0" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>,
+  },
+  {
     id: 'topics',
     label: 'Topics',
     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4z" stroke="currentColor" strokeWidth="1.3" /><path d="M5 6h6M5 8.5h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>,
@@ -25,11 +30,6 @@ const tabs: { id: Tab; label: string; icon: ReactNode }[] = [
     label: 'Settings',
     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3" /><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>,
   },
-  {
-    id: 'wake',
-    label: 'Wake SPOCK',
-    icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.5v6M4.5 4a5 5 0 1 0 7 0" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>,
-  },
 ]
 
 interface Props {
@@ -42,7 +42,7 @@ interface Props {
 
 export function Layout({ topicsPanel, schedulesPanel, memoryPanel, settingsPanel, wakePanel }: Props) {
   const { status, logout } = useStore()
-  const [activeTab, setActiveTab] = useState<Tab>('topics')
+  const [activeTab, setActiveTab] = useState<Tab>('wake')
 
   const panels: Record<Tab, ReactNode> = {
     topics: topicsPanel,
