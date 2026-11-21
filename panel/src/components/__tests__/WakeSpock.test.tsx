@@ -89,7 +89,7 @@ describe('WakeSpock', () => {
   })
 
   it('auth lockout blocks all wakes for retryAfterMs', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(429, { error: 'Too many failed attempts', retryAfterMs: 45000 })))
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(429, { status: 'locked_out', error: 'Too many failed attempts', retryAfterMs: 45000 })))
     render(<WakeSpock />)
     fill('Wake token', 'tok')
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /wake spock/i })) })
@@ -98,6 +98,29 @@ describe('WakeSpock', () => {
     expect(btn.textContent).toMatch(/45s/)
     await act(async () => { await vi.advanceTimersByTimeAsync(46000) })
     expect((screen.getByRole('button', { name: /wake spock/i }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('clears the lockout message when the countdown expires', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(429, { status: 'locked_out', error: 'Too many failed attempts', retryAfterMs: 10000 })))
+    render(<WakeSpock />)
+    fill('Wake token', 'tok')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /wake spock/i })) })
+    expect(screen.getByText(/locked out/i)).toBeTruthy()
+    await act(async () => { await vi.advanceTimersByTimeAsync(11000) })
+    expect(screen.queryByText(/locked out/i)).toBeNull()
+    expect(screen.queryByText(/locked for/i)).toBeNull()
+  })
+
+  it('cancel while reading a 429 body does not become a lockout', async () => {
+    const res = { status: 429, ok: false, json: () => Promise.reject(new DOMException('aborted', 'AbortError')) }
+    vi.stubGlobal('fetch', vi.fn(async () => res as unknown as Response))
+    render(<WakeSpock />)
+    fill('Wake token', 'tok')
+    fill('PIN', '1234')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /wake spock/i })) })
+    expect(screen.getByText(/cancelled/i)).toBeTruthy()
+    expect((screen.getByRole('button', { name: /wake spock/i }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.queryByText(/locked/i)).toBeNull()
   })
 
   it('PIN timeout cooldown uses retryAfterMs from the server', async () => {
@@ -129,12 +152,14 @@ describe('WakeSpock', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('disables the PIN field outside a secure context', () => {
+  it('disables the whole wake form outside a secure context', () => {
     Object.defineProperty(window, 'isSecureContext', { value: false, configurable: true })
     render(<WakeSpock />)
+    fill('Wake token', 'tok')
     expect((screen.getByLabelText('PIN') as HTMLInputElement).disabled).toBe(true)
-    expect(screen.getByText(/PIN needs the HTTPS/i)).toBeTruthy()
-    expect((screen.getByLabelText('Wake token') as HTMLInputElement).disabled).toBe(false)
+    expect((screen.getByLabelText('Wake token') as HTMLInputElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: /wake spock/i }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText('Wake SPOCK needs the HTTPS (tailnet) URL')).toBeTruthy()
   })
 
   it('clears the PIN field after the request', async () => {
