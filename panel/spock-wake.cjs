@@ -8,6 +8,7 @@ const VER = 0x01;
 const OP = { KEY: 0x01, PAUSE: 0x02, TEXT: 0x03, GUI: 0x04 };
 const HID = { ESCAPE: 0x29, SPACE: 0x2c, ENTER: 0x28 };
 const PROBE_INTERVAL_MS = 3000;
+const PROBE_TIMEOUT_MS = 2500;
 const BODY_MAX = 1024;
 const PIN_RE = /^[\x20-\x7e]{1,64}$/;
 const PIN_WARNING = 'PIN may not have worked, check the screen';
@@ -26,13 +27,19 @@ function sealFrame(key, counter, plaintext) {
   return Buffer.concat([hdr, ct, c.getAuthTag()]);
 }
 
-// step: {key}, {pause}, {text}, {gui}; text "$PIN" is replaced by the PIN
-function encodeSteps(steps, pin) {
+const STEP_KINDS = ['key', 'gui', 'pause', 'text'];
+const isByte = (v) => Number.isInteger(v) && v >= 0 && v <= 0xff;
+
+// step: exactly one of {key}, {pause}, {text}, {gui}; text "$PIN" is replaced by the PIN.
+// Exactly-one keeps the $PIN guard (looks at .text) and the encoder in agreement.
+function encodeSteps(steps, pin = '') {
   return Buffer.concat(steps.map((s) => {
-    if (s.key !== undefined) return Buffer.from([OP.KEY, s.key]);
-    if (s.gui !== undefined) return Buffer.from([OP.GUI, s.gui]);
+    const kinds = s && typeof s === 'object' ? Object.keys(s) : [];
+    if (kinds.length !== 1 || !STEP_KINDS.includes(kinds[0])) throw new Error('bad step');
+    if (s.key !== undefined) { if (!isByte(s.key)) throw new Error('bad key'); return Buffer.from([OP.KEY, s.key]); }
+    if (s.gui !== undefined) { if (!isByte(s.gui)) throw new Error('bad gui'); return Buffer.from([OP.GUI, s.gui]); }
     if (s.pause !== undefined) {
-      if (!(s.pause >= 0 && s.pause <= 0xffff)) throw new Error('bad pause');
+      if (!(Number.isInteger(s.pause) && s.pause >= 0 && s.pause <= 0xffff)) throw new Error('bad pause');
       return Buffer.from([OP.PAUSE, s.pause >> 8, s.pause & 0xff]);
     }
     if (typeof s.text === 'string') {
@@ -58,6 +65,8 @@ function createWaker(deps) {
   const dgram = deps.dgram;
   const doFetch = deps.fetch;
   const now = deps.clock ? deps.clock.now : Date.now;
+  const fs = deps.fs || require('fs');
+  const counterFile = cfg.SPOCK_COUNTER_FILE || '';
   const sleep = deps.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
   const baseLog = deps.log || (() => {});
   const timeoutMs = parseInt(cfg.SPOCK_WAKE_TIMEOUT_MS || '120000', 10);
@@ -85,17 +94,31 @@ function createWaker(deps) {
     };
   }
 
-  async function probe() {
+  async function probe(ms = PROBE_TIMEOUT_MS) {
     try {
-      // Any HTTP reply means WSL is up: the panel answers 401 to non-localhost callers.
-      const r = await doFetch(`${spockUrl}/api/health`, { signal: AbortSignal.timeout(2500) });
-      return !!(r && r.status);
+      // Panel answers 401 to non-localhost callers, so any non-5xx reply means WSL is up;
+      // 5xx comes from a proxy/gateway in front of a dead backend.
+      const r = await doFetch(`${spockUrl}/api/health`, { signal: AbortSignal.timeout(Math.max(1, ms)) });
+      return !!(r && r.status > 0 && r.status < 500);
     } catch { return false; }
   }
 
+  function readPersisted() {
+    try { return BigInt(String(fs.readFileSync(counterFile, 'utf8')).trim()); } catch { return 0n; }
+  }
+
+  // Counter must never repeat for a key (GCM nonce): persisted across restarts and
+  // written before the frame leaves, so a clock step back cannot reuse one.
   function nextCounter() {
     let c = BigInt(now());
+    const floor = counterFile ? readPersisted() : 0n;
+    if (c <= floor) c = floor + 1n;
     if (c <= lastCounter) c = lastCounter + 1n;
+    if (counterFile) {
+      const tmp = `${counterFile}.tmp`;
+      fs.writeFileSync(tmp, `${c}\n`);
+      fs.renameSync(tmp, counterFile);
+    }
     lastCounter = c;
     return c;
   }
@@ -103,7 +126,15 @@ function createWaker(deps) {
   function sendUdp(buf) {
     return new Promise((resolve, reject) => {
       const sock = dgram.createSocket('udp4');
-      sock.send(buf, espPort, cfg.ESP_IP, (err) => { sock.close(); err ? reject(err) : resolve(); });
+      let done = false;
+      const settle = (err) => {
+        if (done) return;
+        done = true;
+        try { sock.close(); } catch { /* already closed */ }
+        err ? reject(err) : resolve();
+      };
+      if (sock.on) sock.on('error', settle);
+      try { sock.send(buf, espPort, cfg.ESP_IP, (err) => settle(err || null)); } catch (err) { settle(err); }
     });
   }
 
@@ -117,11 +148,12 @@ function createWaker(deps) {
     busy = true;
     const log = logger(pin);
     const t0 = now();
+    const deadline = t0 + timeoutMs;
     try {
       if (await probe()) return { status: 'already_awake', elapsedMs: now() - t0 };
       const steps = pin ? pinSteps : WAKE_STEPS;
-      const frame = sealFrame(key, nextCounter(), encodeSteps(steps, pin));
       try {
+        const frame = sealFrame(key, nextCounter(), encodeSteps(steps, pin));
         await sendUdp(frame);
       } catch (err) {
         log('spock-wake: frame not sent:', err);
@@ -129,13 +161,21 @@ function createWaker(deps) {
       }
       log(`spock-wake: frame sent (${pin ? 'with text' : 'wake key'}), polling`);
       let probes = 0;
-      while (now() - t0 < timeoutMs) {
-        await sleep(PROBE_INTERVAL_MS);
+      for (;;) {
+        if (deadline - now() <= 0) break;
+        await sleep(Math.min(PROBE_INTERVAL_MS, deadline - now()));
+        const left = deadline - now();
+        if (left <= 0) break;
         probes++;
-        if (await probe()) return { status: 'awake', elapsedMs: now() - t0, probes };
+        const up = await probe(Math.min(PROBE_TIMEOUT_MS, left));
+        if (up && now() <= deadline) return { status: 'awake', elapsedMs: now() - t0, probes };
       }
       const out = { status: 'timeout', elapsedMs: now() - t0, probes, message: TIMEOUT_HINT };
-      if (pin) { cooldownUntil = now() + cooldownMs; out.message = `${PIN_WARNING}. ${TIMEOUT_HINT}`; }
+      if (pin) {
+        cooldownUntil = now() + cooldownMs;
+        out.message = `${PIN_WARNING}. ${TIMEOUT_HINT}`;
+        out.retryAfterMs = cooldownMs;
+      }
       log(`spock-wake: timeout after ${out.elapsedMs} ms`);
       return out;
     } finally {
@@ -152,16 +192,21 @@ function isWakePath(pathname) {
   return pathname === '/api/spock' || pathname.startsWith('/api/spock/');
 }
 
+// On overflow: stop buffering and discard the rest, so the 413 can still be written
+// (destroying the request first would reset the socket before the client reads it).
 function readBodyLimited(req, max) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
+    let over = false;
     req.on('data', (c) => {
+      if (over) return;
       size += c.length;
-      if (size > max) { reject(Object.assign(new Error('too large'), { code: 413 })); req.destroy && req.destroy(); return; }
+      if (size > max) { over = true; chunks.length = 0; reject(Object.assign(new Error('too large'), { code: 413 })); return; }
       chunks.push(c);
     });
     req.on('end', () => {
+      if (over) return;
       const raw = Buffer.concat(chunks).toString();
       if (!raw) return resolve({});
       try { resolve(JSON.parse(raw)); } catch { reject(Object.assign(new Error('bad json'), { code: 400 })); }
@@ -190,9 +235,16 @@ function createWakeHandler({ waker, token, allowedHosts = [], now = Date.now, lo
     while (fails.size >= MAX_FAIL_IPS) fails.delete(fails.keys().next().value);
   }
 
-  function send(res, status, data) {
-    res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', Vary: 'Origin' });
+  function send(res, status, data, extra = {}) {
+    res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', Vary: 'Origin', ...extra });
     res.end(JSON.stringify(data));
+  }
+
+  // PIN only from pages served over HTTPS (or localhost), so it never crosses the LAN in cleartext.
+  function secureOrigin(req) {
+    const origin = req.headers['origin'] || '';
+    if (/^https:\/\//i.test(origin)) return true;
+    return /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(origin);
   }
 
   function sameOrigin(req) {
@@ -218,9 +270,10 @@ function createWakeHandler({ waker, token, allowedHosts = [], now = Date.now, lo
 
     const ip = (req.socket && req.socket.remoteAddress) || '?';
     const f = fails.get(ip);
-    if (f && f.until > now()) return send(res, 429, { error: 'Too many failed attempts' });
+    if (f && f.until > now()) return send(res, 429, { error: 'Too many failed attempts', retryAfterMs: f.until - now() });
     if (!bearerOk(req, token)) {
-      const cur = f && f.until === 0 ? f : { n: 0, until: 0, at: 0 };
+      // a stale streak (older than lockMs) starts over
+      const cur = f && f.until === 0 && now() - f.at <= lockMs ? f : { n: 0, until: 0, at: 0 };
       cur.n++;
       cur.at = now();
       if (cur.n >= maxFails) { cur.n = 0; cur.until = now() + lockMs; }
@@ -234,10 +287,12 @@ function createWakeHandler({ waker, token, allowedHosts = [], now = Date.now, lo
     if (!/^application\/json/i.test(req.headers['content-type'] || '')) return send(res, 415, { error: 'Expected JSON' });
     let body;
     try { body = await readBodyLimited(req, BODY_MAX); } catch (e) {
-      return send(res, e.code === 413 ? 413 : 400, { error: e.code === 413 ? 'Body too large' : 'Invalid JSON' });
+      if (e.code === 413) return send(res, 413, { error: 'Body too large' }, { Connection: 'close' });
+      return send(res, 400, { error: 'Invalid JSON' });
     }
     let pin;
     if (body && body.pin !== undefined && body.pin !== '') {
+      if (!secureOrigin(req)) return send(res, 403, { error: 'https_required' });
       if (typeof body.pin !== 'string' || !PIN_RE.test(body.pin)) return send(res, 400, { error: 'Invalid PIN' });
       pin = body.pin;
     }

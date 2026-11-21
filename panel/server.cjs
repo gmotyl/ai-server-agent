@@ -114,8 +114,10 @@ const spockWaker = spockWake.createWaker({
     FRAME_KEY: spockCfg('FRAME_KEY'), ESP_IP: spockCfg('ESP_IP'), ESP_PORT: spockCfg('ESP_PORT'),
     SPOCK_URL: spockCfg('SPOCK_URL'), SPOCK_STEPS_JSON: spockCfg('SPOCK_STEPS_JSON'),
     SPOCK_WAKE_TIMEOUT_MS: spockCfg('SPOCK_WAKE_TIMEOUT_MS'), SPOCK_PIN_COOLDOWN_MS: spockCfg('SPOCK_PIN_COOLDOWN_MS'),
+    SPOCK_COUNTER_FILE: spockCfg('SPOCK_COUNTER_FILE') || path.join(AGENT_HOME, 'data', 'spock-wake-counter'),
   },
   dgram,
+  fs,
   fetch: (...a) => fetch(...a),
   log: (m) => console.log(`[panel] ${m}`),
 });

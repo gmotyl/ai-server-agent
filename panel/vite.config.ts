@@ -10,6 +10,8 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      // keep the browser Host so the wake route's same-origin check matches Origin
+      '/api/spock': { target: 'http://localhost:3000', changeOrigin: false },
       '/api': 'http://localhost:3000',
     },
   },
