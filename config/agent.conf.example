@@ -53,3 +53,28 @@ PANEL_PORT=3000
 
 # --- Telegram Message Limits ---
 MAX_MESSAGE_LENGTH=4096
+
+# --- Wake SPOCK (panel tab; see docs/spock-wake.md) ---
+# Commented out so sourcing this file never overrides values set in the environment.
+# Uncomment and fill the ones you set here.
+# Bearer token for POST /api/spock/wake (empty = route disabled, 503). Use 32+ random chars.
+# SPOCK_WAKE_TOKEN=""
+# Comma-separated Host headers allowed to call the route. Empty = every request 403 (fail-closed).
+# Wake is HTTPS only: list the tailnet name served by `tailscale serve --bg 3000`, e.g.
+# SPOCK_ALLOWED_HOSTS="foundation1.tailXXXX.ts.net"
+# SPOCK_ALLOWED_HOSTS=""
+# 64 hex chars (AES-256-GCM key shared with the ESP32 firmware). One sender per key.
+# FRAME_KEY=""
+# ESP32 waker address and UDP port
+# ESP_IP=""
+# ESP_PORT=9
+# SPOCK panel base URL probed at /api/health (200 or 401 = awake)
+# SPOCK_URL=""
+# Optional JSON step list overriding the default PIN flow; must contain {"text":"$PIN"}
+# SPOCK_STEPS_JSON='[{"key":44},{"pause":2000},{"key":41},{"pause":1000},{"text":"$PIN"},{"key":40}]'
+# SPOCK_STEPS_JSON=""
+# Total probe window after sending (ms) and PIN retry cooldown after a timeout (ms)
+# SPOCK_WAKE_TIMEOUT_MS=120000
+# SPOCK_PIN_COOLDOWN_MS=300000
+# Last frame counter (nonce); default $AGENT_HOME/data/spock-wake-counter
+# SPOCK_COUNTER_FILE=""
