@@ -111,3 +111,7 @@ accepted or that a user is signed in: WSL and the panel can run before sign-in, 
 PIN still leaves the panel reachable. Conversely, a correct PIN can end in `timeout` if WSL or
 Windows Tailscale (not in unattended mode) only starts after sign-in. After a PIN wake, check
 the screen. This is by design: no sign-in signal is available to the NAS.
+
+## Saved token and PIN
+
+The Wake SPOCK tab saves the wake token and the PIN in the browser's `localStorage` for the HTTPS origin, so the installed phone app wakes with one tap. "Forget token & PIN" clears both. Anyone who can open the panel in that browser can wake and unlock SPOCK, so rely on the phone's own lock screen.
