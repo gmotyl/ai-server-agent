@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 
 const PIN_WARNING = 'PIN may not have worked, check the screen'
 const COOLDOWN_FALLBACK_MS = 300_000 // matches server SPOCK_PIN_COOLDOWN_MS default
@@ -14,98 +14,122 @@ interface WakeReply {
   retryAfterMs?: number
 }
 
+interface WakeState {
+  phase: Phase
+  message: string
+  startedAt: number
+  finalMs: number | null
+  pinCooldownUntil: number // blocks PIN wakes only
+  lockoutUntil: number // auth lockout: blocks every wake
+}
+
+const INITIAL: WakeState = { phase: 'idle', message: '', startedAt: 0, finalMs: null, pinCooldownUntil: 0, lockoutUntil: 0 }
+
+// Module-level so a wake survives the tab unmounting; never holds the token or PIN.
+let state: WakeState = INITIAL
+let inflight: AbortController | null = null
+const listeners = new Set<() => void>()
+
+function update(patch: Partial<WakeState>) {
+  state = { ...state, ...patch }
+  listeners.forEach(l => l())
+}
+const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l) } }
+const snapshot = () => state
+
+export function resetWakeStore() {
+  state = INITIAL
+  inflight = null
+  listeners.forEach(l => l())
+}
+
+async function startWake(token: string, pin: string) {
+  const ctrl = new AbortController()
+  inflight = ctrl
+  const t0 = Date.now()
+  update({ phase: 'waking', startedAt: t0, finalMs: null, message: '' })
+  try {
+    const res = await fetch('/api/spock/wake', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(pin ? { pin } : {}),
+      signal: ctrl.signal,
+    })
+    const data = (await res.json().catch(() => ({}))) as WakeReply
+    const end = Date.now()
+    const finalMs = data.elapsedMs ?? end - t0
+
+    if (res.status === 429 && data.status === 'cooldown') {
+      update({ finalMs, phase: 'error', message: data.message ?? PIN_WARNING, pinCooldownUntil: end + (data.retryAfterMs ?? COOLDOWN_FALLBACK_MS) })
+    } else if (res.status === 429) {
+      update({ finalMs, phase: 'error', message: 'Too many failed attempts, locked out. Wait for the countdown.', lockoutUntil: end + (data.retryAfterMs ?? LOCKOUT_FALLBACK_MS) })
+    } else if (res.status === 401) {
+      update({ finalMs, phase: 'error', message: 'Wake token rejected' })
+    } else if (res.status === 403 && data.error === 'https_required') {
+      update({ finalMs, phase: 'error', message: 'PIN needs the HTTPS (tailnet) URL' })
+    } else if (res.status === 409) {
+      update({ finalMs, phase: 'error', message: 'A wake is already running' })
+    } else if (res.status === 503) {
+      update({ finalMs, phase: 'error', message: 'Wake is not configured on the server' })
+    } else if (res.ok && (data.status === 'awake' || data.status === 'already_awake')) {
+      update({ finalMs, phase: 'awake', message: data.status === 'already_awake' ? 'SPOCK is already awake' : 'SPOCK is awake' })
+    } else if (res.ok && data.status === 'timeout') {
+      update({
+        finalMs, phase: 'timeout',
+        message: data.message ?? (pin ? PIN_WARNING : 'SPOCK did not answer in time'),
+        ...(pin ? { pinCooldownUntil: end + (data.retryAfterMs ?? COOLDOWN_FALLBACK_MS) } : {}),
+      })
+    } else {
+      update({ finalMs, phase: 'error', message: data.message ?? data.error ?? `Request failed (${res.status})` })
+    }
+  } catch (e) {
+    const aborted = e instanceof DOMException && e.name === 'AbortError'
+    update({
+      finalMs: Date.now() - t0, phase: 'error',
+      message: aborted ? 'Cancelled (the wake may still be running on the server)' : 'Request failed',
+    })
+  } finally {
+    if (inflight === ctrl) inflight = null
+  }
+}
+
 const fmt = (ms: number) => `${Math.max(0, Math.ceil(ms / 1000))}s`
 
-// The wake token and PIN live in React state only: never in storage, cookies or URL.
+// The wake token and PIN live in component state only: never in storage, cookies, URL or the module store.
 export function WakeSpock() {
+  const s = useSyncExternalStore(subscribe, snapshot)
   const [token, setToken] = useState('')
   const [pin, setPin] = useState('')
-  const [phase, setPhase] = useState<Phase>('idle')
-  const [message, setMessage] = useState('')
-  const [startedAt, setStartedAt] = useState(0)
   const [now, setNow] = useState(() => Date.now())
-  const [finalMs, setFinalMs] = useState<number | null>(null)
-  const [cooldownUntil, setCooldownUntil] = useState(0)
-  const abortRef = useRef<AbortController | null>(null)
+  const secure = typeof window !== 'undefined' && !!window.isSecureContext
 
-  const waking = phase === 'waking'
-  const cooling = cooldownUntil > now
+  const waking = s.phase === 'waking'
+  const pinCooling = s.pinCooldownUntil > now
+  const locked = s.lockoutUntil > now
+  const pinBlocked = !!pin && pinCooling
 
   useEffect(() => {
-    if (!waking && !cooling) return
+    if (!waking && !pinCooling && !locked) return
+    setNow(Date.now())
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
-  }, [waking, cooling])
+  }, [waking, pinCooling, locked])
 
-  useEffect(() => () => abortRef.current?.abort(), [])
-
-  const wake = async () => {
-    const usedPin = pin
-    const ctrl = new AbortController()
-    abortRef.current = ctrl
-    const t0 = Date.now()
-    setStartedAt(t0)
-    setNow(t0)
-    setFinalMs(null)
-    setMessage('')
-    setPhase('waking')
-    try {
-      const res = await fetch('/api/spock/wake', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(usedPin ? { pin: usedPin } : {}),
-        signal: ctrl.signal,
-      })
-      const data = (await res.json().catch(() => ({}))) as WakeReply
-      const end = Date.now()
-      setNow(end)
-      setFinalMs(data.elapsedMs ?? end - t0)
-
-      if (res.status === 429) {
-        setCooldownUntil(end + (data.retryAfterMs ?? (data.status === 'cooldown' ? COOLDOWN_FALLBACK_MS : LOCKOUT_FALLBACK_MS)))
-        setMessage(data.message ?? 'Too many attempts, locked out. Wait for the countdown.')
-        setPhase('error')
-      } else if (res.status === 401) {
-        setMessage('Wake token rejected')
-        setPhase('error')
-      } else if (res.status === 409) {
-        setMessage('A wake is already running')
-        setPhase('error')
-      } else if (res.status === 503) {
-        setMessage('Wake is not configured on the server')
-        setPhase('error')
-      } else if (res.ok && (data.status === 'awake' || data.status === 'already_awake')) {
-        setMessage(data.status === 'already_awake' ? 'SPOCK is already awake' : 'SPOCK is awake')
-        setPhase('awake')
-      } else if (res.ok && data.status === 'timeout') {
-        if (usedPin) setCooldownUntil(end + COOLDOWN_FALLBACK_MS)
-        setMessage(data.message ?? (usedPin ? PIN_WARNING : 'SPOCK did not answer in time'))
-        setPhase('timeout')
-      } else {
-        setMessage(data.message ?? data.error ?? `Request failed (${res.status})`)
-        setPhase('error')
-      }
-    } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') {
-        setMessage('Cancelled (the wake may still be running on the server)')
-      } else {
-        setMessage('Request failed')
-      }
-      setFinalMs(Date.now() - t0)
-      setPhase('error')
-    } finally {
-      abortRef.current = null
-      setPin('')
-    }
+  const wake = () => {
+    const usedPin = secure ? pin : ''
+    setPin('')
+    setNow(Date.now())
+    void startWake(token, usedPin)
   }
 
-  const elapsed = waking ? now - startedAt : finalMs
+  const elapsed = waking ? now - s.startedAt : s.finalMs
   const statusText =
-    phase === 'idle' ? 'Idle'
+    s.phase === 'idle' ? 'Idle'
     : waking ? `Waking… ${fmt(elapsed ?? 0)} (probing every 3s, up to ~2 min)`
-    : `${phase === 'awake' ? 'Awake' : phase === 'timeout' ? 'Timeout' : 'Error'}${elapsed != null ? ` after ${fmt(elapsed)}` : ''}`
+    : `${s.phase === 'awake' ? 'Awake' : s.phase === 'timeout' ? 'Timeout' : 'Error'}${elapsed != null ? ` after ${fmt(elapsed)}` : ''}`
 
-  const disabled = waking || cooling || !token
+  const disabled = waking || locked || pinBlocked || !token
+  const retryIn = locked ? s.lockoutUntil - now : pinBlocked ? s.pinCooldownUntil - now : 0
 
   return (
     <section>
@@ -138,30 +162,40 @@ export function WakeSpock() {
             inputMode="numeric"
             autoComplete="off"
             value={pin}
-            disabled={waking}
+            disabled={waking || !secure}
             onChange={e => setPin(e.target.value)}
             placeholder="Windows PIN, if SPOCK is locked"
           />
         </div>
+        {!secure && (
+          <div className="text-[0.75rem] text-txt-3">
+            PIN needs the HTTPS (tailnet) URL. Wake without PIN works here.
+          </div>
+        )}
 
         <div className="flex items-center gap-2">
           <button onClick={wake} disabled={disabled} className="btn-primary">
-            {cooling ? `Wake SPOCK (retry in ${fmt(cooldownUntil - now)})` : 'Wake SPOCK'}
+            {retryIn > 0 ? `Wake SPOCK (retry in ${fmt(retryIn)})` : 'Wake SPOCK'}
           </button>
           {waking && (
-            <button onClick={() => abortRef.current?.abort()} className="btn-ghost">Cancel</button>
+            <button onClick={() => inflight?.abort()} className="btn-ghost">Cancel</button>
           )}
         </div>
 
         <div role="status" className="font-mono text-[0.8rem] text-txt-2">{statusText}</div>
-        {message && (
-          <div className={phase === 'awake' ? 'text-[0.8rem] text-emerald' : 'text-[0.8rem] text-amber-400'}>
-            {message}
+        {s.message && (
+          <div className={s.phase === 'awake' ? 'text-[0.8rem] text-emerald' : 'text-[0.8rem] text-amber-400'}>
+            {s.message}
           </div>
         )}
-        {cooling && (
+        {locked && (
           <div className="text-[0.75rem] text-txt-3">
-            PIN wakes are locked for {fmt(cooldownUntil - now)}.
+            All wakes are locked for {fmt(s.lockoutUntil - now)} after failed token attempts.
+          </div>
+        )}
+        {!locked && pinCooling && (
+          <div className="text-[0.75rem] text-txt-3">
+            PIN wakes are locked for {fmt(s.pinCooldownUntil - now)}. Wake without PIN still works.
           </div>
         )}
       </div>

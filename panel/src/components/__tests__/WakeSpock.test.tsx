@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { WakeSpock } from '../WakeSpock'
+import { WakeSpock, resetWakeStore } from '../WakeSpock'
 
 const PIN_WARNING = 'PIN may not have worked, check the screen'
 
@@ -13,7 +13,11 @@ function fill(label: string, value: string) {
 }
 
 describe('WakeSpock', () => {
-  beforeEach(() => { vi.useFakeTimers() })
+  beforeEach(() => {
+    vi.useFakeTimers()
+    resetWakeStore()
+    Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true })
+  })
   afterEach(() => {
     cleanup()
     vi.useRealTimers()
@@ -61,12 +65,76 @@ describe('WakeSpock', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /wake spock/i })) })
 
     expect(screen.getByText(new RegExp(PIN_WARNING))).toBeTruthy()
+    fill('PIN', '1234')
     const btn = screen.getByRole('button', { name: /wake spock|retry in/i }) as HTMLButtonElement
     expect(btn.disabled).toBe(true)
     expect(btn.textContent).toMatch(/30s/)
 
     await act(async () => { await vi.advanceTimersByTimeAsync(31000) })
     expect((screen.getByRole('button', { name: /wake spock/i }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('PIN cooldown blocks only PIN wakes', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(429, { status: 'cooldown', message: PIN_WARNING, retryAfterMs: 30000 })))
+    render(<WakeSpock />)
+    fill('Wake token', 'tok')
+    fill('PIN', '1234')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /wake spock/i })) })
+    // PIN cleared after the request: a PIN-less wake is allowed
+    expect((screen.getByRole('button', { name: /wake spock/i }) as HTMLButtonElement).disabled).toBe(false)
+    fill('PIN', '1234')
+    expect((screen.getByRole('button', { name: /wake spock/i }) as HTMLButtonElement).disabled).toBe(true)
+    fill('PIN', '')
+    expect((screen.getByRole('button', { name: /wake spock/i }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('auth lockout blocks all wakes for retryAfterMs', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(429, { error: 'Too many failed attempts', retryAfterMs: 45000 })))
+    render(<WakeSpock />)
+    fill('Wake token', 'tok')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /wake spock/i })) })
+    const btn = screen.getByRole('button', { name: /wake spock/i }) as HTMLButtonElement
+    expect(btn.disabled).toBe(true)
+    expect(btn.textContent).toMatch(/45s/)
+    await act(async () => { await vi.advanceTimersByTimeAsync(46000) })
+    expect((screen.getByRole('button', { name: /wake spock/i }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('PIN timeout cooldown uses retryAfterMs from the server', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { status: 'timeout', elapsedMs: 120000, message: PIN_WARNING, retryAfterMs: 20000 })))
+    render(<WakeSpock />)
+    fill('Wake token', 'tok')
+    fill('PIN', '1234')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /wake spock/i })) })
+    fill('PIN', '1234')
+    expect(screen.getByRole('button', { name: /wake spock/i }).textContent).toMatch(/20s/)
+  })
+
+  it('keeps an in-flight wake across remount (tab switch)', async () => {
+    let resolve!: (r: Response) => void
+    let signal: AbortSignal | undefined
+    const fetchMock = vi.fn((_u: string, init: RequestInit) => { signal = init.signal ?? undefined; return new Promise<Response>(r => { resolve = r }) })
+    vi.stubGlobal('fetch', fetchMock)
+    const first = render(<WakeSpock />)
+    fill('Wake token', 'tok')
+    fireEvent.click(screen.getByRole('button', { name: /wake spock/i }))
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
+    first.unmount()
+    expect(signal?.aborted).toBe(false)
+
+    render(<WakeSpock />)
+    expect(screen.getByRole('status').textContent).toMatch(/waking.*4s/i)
+    await act(async () => { resolve(jsonResponse(200, { status: 'awake', elapsedMs: 9000 })) })
+    expect(screen.getByRole('status').textContent).toMatch(/awake/i)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables the PIN field outside a secure context', () => {
+    Object.defineProperty(window, 'isSecureContext', { value: false, configurable: true })
+    render(<WakeSpock />)
+    expect((screen.getByLabelText('PIN') as HTMLInputElement).disabled).toBe(true)
+    expect(screen.getByText(/PIN needs the HTTPS/i)).toBeTruthy()
+    expect((screen.getByLabelText('Wake token') as HTMLInputElement).disabled).toBe(false)
   })
 
   it('clears the PIN field after the request', async () => {
