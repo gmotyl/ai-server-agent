@@ -109,10 +109,35 @@ Edit `data/schedules.json`:
     "provider": "claude",
     "workdir": "/git/motyl-dev",
     "prompt": "/generate-news-summary all",
-    "topic_name": "Scheduled: News Generation"
+    "topic_name": "Scheduled: News Generation",
+    "verify": "test -z \"$(git status --porcelain)\"",
+    "verify_retries": 1
   }
 ]
 ```
+
+### Acceptance checks (`verify`)
+
+The provider's exit code proves nothing. Providers run single-shot (`claude -p …`), so a run
+that generates its output, backgrounds the slow part and ends its turn "waiting for results"
+still exits 0 — with the work unfinished. That silently swallowed five days of news generation
+in Aug 2026.
+
+`verify` is an optional shell command run in the task's `workdir` after the provider, asserting
+the task's actual goal was reached. Non-zero means the task did not complete:
+
+- the provider is re-run once with a **repair prompt** carrying the check command and its
+  output, told to finish the outstanding work rather than restart the task
+  (`verify_retries`, default `1`);
+- if it still fails, the task logs `ERROR`, posts `❌ Scheduled task <name> did not complete`
+  to its Telegram topic, and exits 1;
+- the outcome is recorded in `state.json` under `schedules_last_status.<name>`.
+
+`GIT_DIR` and `GIT_WORK_TREE` are unset for the check — `agent.conf` exports `GIT_DIR` as the
+repo *root*, which collides with git's own variable and breaks git commands inside it.
+
+`schedules_last_run` is written even on failure, so a broken task does not re-fire on every
+heartbeat for the rest of the day.
 
 ## Special Commands
 

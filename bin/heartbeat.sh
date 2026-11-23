@@ -172,7 +172,8 @@ for ((i=0; i<update_count; i++)); do
         telegram_send "$topic_id" "Schedule '${sched_name}' not found."
       else
         telegram_send "$topic_id" "Running *${sched_name}*..."
-        "${SCRIPT_DIR}/schedule-run.sh" "$sched_name"
+        # A failing task exits 1 and reports itself; don't abort the heartbeat.
+        "${SCRIPT_DIR}/schedule-run.sh" "$sched_name" || true
       fi
       continue
       ;;
