@@ -110,7 +110,8 @@ test('seals frame decodable by the shared vector', () => {
 test('default PIN steps encode to exact bytes ending with Enter', () => {
   const pt = wake.encodeSteps(wake.DEFAULT_PIN_STEPS, PIN);
   const pinHex = Buffer.from(PIN).toString('hex');
-  assert.equal(pt.toString('hex'), `012c0207d001290203e80306${pinHex}0128`);
+  // Space, pause 8000, Escape x3 (300/300/700 ms apart), PIN, Enter
+  assert.equal(pt.toString('hex'), `012c021f40012902012c012902012c01290202bc0306${pinHex}0128`);
   assert.equal(pt.subarray(-2).toString('hex'), '0128');
 });
 
@@ -167,8 +168,8 @@ test('never logs or returns the PIN', async () => {
   const r = await env.waker.wake({ pin: PIN });
   const pt = open(env.sent[0].buf, KEY_HEX);
   assert.ok(pt.includes(Buffer.from(PIN)), 'PIN is sealed into the frame');
-  // default steps: Space, pause 2000, Escape, pause 1000, then the PIN
-  assert.equal(pt.subarray(0, 10).toString('hex'), '012c0207d001290203e8');
+  // default steps: Space, pause 8000, Escape, then the PIN
+  assert.equal(pt.subarray(0, 7).toString('hex'), '012c021f400129');
   assert.ok(!JSON.stringify(r).includes(PIN));
   assert.ok(!env.logs.join('\n').includes(PIN));
   // handler path: response and logs stay PIN-free, even when logging an error containing it
@@ -195,6 +196,59 @@ test('cooldown after failed PIN wake', async () => {
   env.clock.advance(300_001);
   const r4 = await env.waker.wake({ pin: PIN });
   assert.notEqual(r4.status, 'cooldown');
+});
+
+test('no PIN cooldown by default: a timed-out PIN wake can be retried at once', async () => {
+  const env = fakeEnv({ config: { SPOCK_WAKE_TIMEOUT_MS: '9000' } });
+  const r = await env.waker.wake({ pin: PIN });
+  assert.equal(r.status, 'timeout');
+  assert.equal(r.retryAfterMs, undefined);
+  const r2 = await env.waker.wake({ pin: PIN });
+  assert.equal(r2.status, 'timeout');
+  assert.equal(env.sent.length, 2);
+  // 0 is an explicit off, not a fall back to a default
+  const z = fakeEnv({ config: { SPOCK_WAKE_TIMEOUT_MS: '9000', SPOCK_PIN_COOLDOWN_MS: '0' } });
+  await z.waker.wake({ pin: PIN });
+  assert.notEqual((await z.waker.wake({ pin: PIN })).status, 'cooldown');
+});
+
+test('force skips the preflight probe, waits for the steps, then probes once', async () => {
+  const env = fakeEnv();
+  env.probes.answers.push(true);
+  const r = await env.waker.wake({ pin: PIN, force: true });
+  assert.equal(env.sent.length, 1, 'frame sent although SPOCK answers');
+  assert.equal(env.probes.calls, 1, 'exactly one probe, after the wait');
+  assert.equal(r.status, 'awake');
+  assert.equal(r.forced, true);
+  const expected = wake.stepsDurationMs(wake.DEFAULT_PIN_STEPS, PIN) + 2000;
+  assert.deepEqual(env.sleeps, [expected]);
+  // 8000 + 300 + 300 + 700 pauses, 5 taps, 6 PIN chars, + 2000 slack
+  assert.equal(expected, 9300 + 11 * 80 + 2000);
+  assert.ok(!env.logs.join('\n').includes(PIN));
+});
+
+test('forced wake reports not_responding when the single probe fails', async () => {
+  const env = fakeEnv();
+  env.probes.answers.push(false);
+  const r = await env.waker.wake({ force: true });
+  assert.equal(r.status, 'not_responding');
+  assert.equal(env.sent.length, 1);
+  assert.equal(open(env.sent[0].buf, KEY_HEX).toString('hex'), '012c');
+  assert.deepEqual(env.sleeps, [80 + 2000]);
+});
+
+test('handler passes force and rejects a non-boolean force', async () => {
+  const env = fakeEnv();
+  env.probes.answers.push(true);
+  const h = handlerFor(env);
+  const res = fakeRes();
+  await h(fakeReq({ body: JSON.stringify({ force: true }) }), res);
+  assert.equal(res.status, 200);
+  assert.equal(JSON.parse(res.body).status, 'awake');
+  assert.equal(env.sent.length, 1);
+  const bad = fakeRes();
+  await h(fakeReq({ body: JSON.stringify({ force: 'yes' }) }), bad);
+  assert.equal(bad.status, 400);
 });
 
 test('refuses unauthenticated request', async () => {
@@ -403,7 +457,7 @@ test('garbage numeric config falls back to defaults', async () => {
   const r = await env.waker.wake({ pin: PIN });
   assert.equal(r.status, 'timeout');
   assert.equal(env.sleeps.reduce((a, b) => a + b, 0), 120000);
-  assert.equal(r.retryAfterMs, 300000);
+  assert.equal(r.retryAfterMs, undefined, 'cooldown falls back to off');
   assert.equal(env.sent[0].port, 9);
   const z = fakeEnv({ config: { SPOCK_WAKE_TIMEOUT_MS: '0' } });
   assert.equal((await z.waker.wake({})).status, 'timeout');
