@@ -52,12 +52,28 @@ function encodeSteps(steps, pin = '') {
   }));
 }
 
-// Space wakes from Modern Standby (F15 does not); Escape cancels the Hello scan and focuses the PIN field.
+// Space wakes from Modern Standby (F15 does not). Escape does not cancel the Hello face scan;
+// the PIN prompt appears ~8 s after wake, so wait it out, then Escape x3 to leave a
+// "Sign-in options" view if one is shown instead, then type the PIN.
 const DEFAULT_PIN_STEPS = [
-  { key: HID.SPACE }, { pause: 2000 }, { key: HID.ESCAPE }, { pause: 1000 },
+  { key: HID.SPACE }, { pause: 8000 },
+  { key: HID.ESCAPE }, { pause: 300 }, { key: HID.ESCAPE }, { pause: 300 }, { key: HID.ESCAPE }, { pause: 700 },
   { text: '$PIN' }, { key: HID.ENTER },
 ];
 const WAKE_STEPS = [{ key: HID.SPACE }];
+
+// Firmware taps a key as 40 ms down + 40 ms up.
+const TAP_MS = 80;
+const FORCE_CHECK_SLACK_MS = 2000;
+
+// How long the ESP needs to play the steps (text counts one tap per character).
+function stepsDurationMs(steps, pin = '') {
+  return steps.reduce((ms, s) => {
+    if (s.pause !== undefined) return ms + s.pause;
+    if (typeof s.text === 'string') return ms + TAP_MS * (s.text === '$PIN' ? pin : s.text).length;
+    return ms + TAP_MS;
+  }, 0);
+}
 
 // --- Waker ---
 
@@ -65,6 +81,12 @@ const WAKE_STEPS = [{ key: HID.SPACE }];
 function posInt(v, def) {
   const n = parseInt(v, 10);
   return Number.isFinite(n) && n > 0 ? n : def;
+}
+
+// Non-negative integer or the default; 0 is a valid "off".
+function nonNegInt(v, def) {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) && n >= 0 ? n : def;
 }
 
 function createWaker(deps) {
@@ -77,7 +99,8 @@ function createWaker(deps) {
   const sleep = deps.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
   const baseLog = deps.log || (() => {});
   const timeoutMs = posInt(cfg.SPOCK_WAKE_TIMEOUT_MS, 120000);
-  const cooldownMs = posInt(cfg.SPOCK_PIN_COOLDOWN_MS, 300000);
+  // A timeout does not mean a wrong PIN, and Windows locks out wrong PINs itself: off by default.
+  const cooldownMs = nonNegInt(cfg.SPOCK_PIN_COOLDOWN_MS, 0);
   const espPort = posInt(cfg.ESP_PORT, 9);
   const keyHex = cfg.FRAME_KEY || '';
   const key = /^[0-9a-fA-F]{64}$/.test(keyHex) ? Buffer.from(keyHex, 'hex') : null;
@@ -163,7 +186,9 @@ function createWaker(deps) {
     });
   }
 
-  async function wake({ pin } = {}) {
+  // force: skip the preflight probe (WSL can answer while the screen is off and locked),
+  // send, wait for the steps to play, then probe once.
+  async function wake({ pin, force = false } = {}) {
     if (!ready) return { status: 'not_configured' };
     if (pin && !pinSteps.some((s) => s.text === '$PIN')) return { status: 'steps_missing_pin', message: 'Configured steps contain no $PIN text step' };
     if (busy) return { status: 'busy', message: 'A wake is already running' };
@@ -175,7 +200,7 @@ function createWaker(deps) {
     const t0 = now();
     let deadline;
     try {
-      if (await probe()) return { status: 'already_awake', elapsedMs: now() - t0 };
+      if (!force && await probe()) return { status: 'already_awake', elapsedMs: now() - t0 };
       const steps = pin ? pinSteps : WAKE_STEPS;
       try {
         const frame = sealFrame(key, nextCounter(), encodeSteps(steps, pin));
@@ -183,6 +208,14 @@ function createWaker(deps) {
       } catch (err) {
         log('spock-wake: frame not sent:', err);
         return { status: 'not_sent', message: 'frame not sent' };
+      }
+      if (force) {
+        log(`spock-wake: frame sent (${pin ? 'with text' : 'wake key'}, forced), checking once`);
+        await sleep(stepsDurationMs(steps, pin) + FORCE_CHECK_SLACK_MS);
+        const up = await probe();
+        const r = { status: up ? 'awake' : 'not_responding', forced: true, elapsedMs: now() - t0 };
+        log(`spock-wake: forced check ${r.status}`);
+        return r;
       }
       // polling window starts after the send, not before the preflight probe
       deadline = now() + timeoutMs;
@@ -198,7 +231,7 @@ function createWaker(deps) {
         if (up && now() <= deadline) return { status: 'awake', elapsedMs: now() - t0, probes };
       }
       const out = { status: 'timeout', elapsedMs: now() - t0, probes, message: TIMEOUT_HINT };
-      if (pin) {
+      if (pin && cooldownMs > 0) {
         cooldownUntil = now() + cooldownMs;
         out.message = `${PIN_WARNING}. ${TIMEOUT_HINT}`;
         out.retryAfterMs = cooldownMs;
@@ -323,8 +356,10 @@ function createWakeHandler({ waker, token, allowedHosts = [], now = Date.now, lo
       if (typeof body.pin !== 'string' || !PIN_RE.test(body.pin)) return send(res, 400, { error: 'Invalid PIN' });
       pin = body.pin;
     }
+    if (body && body.force !== undefined && typeof body.force !== 'boolean') return send(res, 400, { error: 'Invalid force' });
+    const force = !!(body && body.force);
     try {
-      const r = await waker.wake({ pin });
+      const r = await waker.wake({ pin, force });
       if (r.status === 'steps_missing_pin') return send(res, 500, { error: 'steps_missing_pin' });
       const http = { not_configured: 503, busy: 409, cooldown: 429, not_sent: 502 }[r.status] || 200;
       return send(res, http, r);
@@ -339,4 +374,4 @@ function createWakeHandler({ waker, token, allowedHosts = [], now = Date.now, lo
   return handle;
 }
 
-module.exports = { sealFrame, encodeSteps, createWaker, createWakeHandler, isWakePath, DEFAULT_PIN_STEPS };
+module.exports = { sealFrame, encodeSteps, stepsDurationMs, createWaker, createWakeHandler, isWakePath, DEFAULT_PIN_STEPS };

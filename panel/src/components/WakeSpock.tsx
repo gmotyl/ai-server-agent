@@ -1,12 +1,12 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 
 const PIN_WARNING = 'PIN may not have worked, check the screen'
-const COOLDOWN_FALLBACK_MS = 300_000 // matches server SPOCK_PIN_COOLDOWN_MS default
 const LOCKOUT_FALLBACK_MS = 60_000 // matches server auth lockout default
 const LOCKOUT_MSG = 'Too many failed attempts, locked out. Wait for the countdown.'
+const ALREADY_AWAKE_MSG = 'SPOCK answers on the network, but the screen may still be off or locked. Send the sequence anyway?'
 const CANCELLED_MSG = 'Cancelled (the wake may still be running on the server)'
 
-type Phase = 'idle' | 'waking' | 'awake' | 'timeout' | 'error'
+type Phase = 'idle' | 'waking' | 'awake' | 'already_awake' | 'timeout' | 'error'
 
 interface WakeReply {
   status?: string
@@ -21,11 +21,12 @@ interface WakeState {
   message: string
   startedAt: number
   finalMs: number | null
+  forced: boolean // current/last wake skipped the preflight probe
   pinCooldownUntil: number // blocks PIN wakes only
   lockoutUntil: number // auth lockout: blocks every wake
 }
 
-const INITIAL: WakeState = { phase: 'idle', message: '', startedAt: 0, finalMs: null, pinCooldownUntil: 0, lockoutUntil: 0 }
+const INITIAL: WakeState = { phase: 'idle', message: '', startedAt: 0, finalMs: null, forced: false, pinCooldownUntil: 0, lockoutUntil: 0 }
 
 // Module-level so a wake survives the tab unmounting; never holds the token or PIN.
 let state: WakeState = INITIAL
@@ -58,16 +59,16 @@ export function resetWakeStore() {
   listeners.forEach(l => l())
 }
 
-async function startWake(token: string, pin: string) {
+async function startWake(token: string, pin: string, force = false) {
   const ctrl = new AbortController()
   inflight = ctrl
   const t0 = Date.now()
-  update({ phase: 'waking', startedAt: t0, finalMs: null, message: '' })
+  update({ phase: 'waking', startedAt: t0, finalMs: null, message: '', forced: force })
   try {
     const res = await fetch('/api/spock/wake', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(pin ? { pin } : {}),
+      body: JSON.stringify({ ...(pin ? { pin } : {}), ...(force ? { force: true } : {}) }),
       signal: ctrl.signal,
     })
     let parsed: WakeReply | null = null
@@ -86,7 +87,7 @@ async function startWake(token: string, pin: string) {
     const finalMs = data.elapsedMs ?? end - t0
 
     if (res.status === 429 && data.status === 'cooldown') {
-      update({ finalMs, phase: 'error', message: data.message ?? PIN_WARNING, pinCooldownUntil: end + (data.retryAfterMs ?? COOLDOWN_FALLBACK_MS) })
+      update({ finalMs, phase: 'error', message: data.message ?? PIN_WARNING, pinCooldownUntil: end + (data.retryAfterMs ?? 0) })
     } else if (res.status === 429 && data.status === 'locked_out') {
       update({ finalMs })
       startLockout(data.retryAfterMs ?? LOCKOUT_FALLBACK_MS)
@@ -98,13 +99,18 @@ async function startWake(token: string, pin: string) {
       update({ finalMs, phase: 'error', message: 'A wake is already running' })
     } else if (res.status === 503) {
       update({ finalMs, phase: 'error', message: 'Wake is not configured on the server' })
-    } else if (res.ok && (data.status === 'awake' || data.status === 'already_awake')) {
-      update({ finalMs, phase: 'awake', message: data.status === 'already_awake' ? 'SPOCK is already awake' : 'SPOCK is awake' })
+    } else if (res.ok && data.status === 'already_awake') {
+      update({ finalMs, phase: 'already_awake', message: ALREADY_AWAKE_MSG })
+    } else if (res.ok && data.status === 'awake') {
+      update({ finalMs, phase: 'awake', message: force ? 'Sequence sent, SPOCK answers (check the screen)' : 'SPOCK is awake' })
+    } else if (res.ok && data.status === 'not_responding') {
+      update({ finalMs, phase: 'timeout', message: 'Sequence sent, but SPOCK does not answer' })
     } else if (res.ok && data.status === 'timeout') {
       update({
         finalMs, phase: 'timeout',
         message: data.message ?? (pin ? PIN_WARNING : 'SPOCK did not answer in time'),
-        ...(pin ? { pinCooldownUntil: end + (data.retryAfterMs ?? COOLDOWN_FALLBACK_MS) } : {}),
+        // server sends retryAfterMs only when a PIN cooldown is configured
+        ...(pin && data.retryAfterMs ? { pinCooldownUntil: end + data.retryAfterMs } : {}),
       })
     } else {
       update({ finalMs, phase: 'error', message: data.message ?? data.error ?? `Request failed (${res.status})` })
@@ -159,17 +165,17 @@ export function WakeSpock() {
     return () => clearInterval(id)
   }, [waking, pinCooling, locked])
 
-  const wake = () => {
+  const wake = (force = false) => {
     if (!secure) return
     setNow(Date.now())
-    void startWake(token, pin)
+    void startWake(token, pin, force)
   }
 
   const elapsed = waking ? now - s.startedAt : s.finalMs
   const statusText =
     s.phase === 'idle' ? 'Idle'
-    : waking ? `Waking… ${fmt(elapsed ?? 0)} (probing every 3s, up to ~2 min)`
-    : `${s.phase === 'awake' ? 'Awake' : s.phase === 'timeout' ? 'Timeout' : 'Error'}${elapsed != null ? ` after ${fmt(elapsed)}` : ''}`
+    : waking ? (s.forced ? `Sending sequence… ${fmt(elapsed ?? 0)} (one check when it finishes)` : `Waking… ${fmt(elapsed ?? 0)} (probing every 3s, up to ~2 min)`)
+    : `${s.phase === 'awake' ? 'Awake' : s.phase === 'already_awake' ? 'Already awake?' : s.phase === 'timeout' ? 'Timeout' : 'Error'}${elapsed != null ? ` after ${fmt(elapsed)}` : ''}`
 
   const disabled = !secure || waking || locked || pinBlocked || !token
   const retryIn = locked ? s.lockoutUntil - now : pinBlocked ? s.pinCooldownUntil - now : 0
@@ -217,9 +223,12 @@ export function WakeSpock() {
         )}
 
         <div className="flex items-center gap-2">
-          <button onClick={wake} disabled={disabled} className="btn-primary">
+          <button onClick={() => wake()} disabled={disabled} className="btn-primary">
             {retryIn > 0 ? `Wake SPOCK (retry in ${fmt(retryIn)})` : 'Wake SPOCK'}
           </button>
+          {s.phase === 'already_awake' && (
+            <button onClick={() => wake(true)} disabled={disabled} className="btn-ghost">Send anyway</button>
+          )}
           {waking && (
             <button onClick={() => inflight?.abort()} className="btn-ghost">Cancel</button>
           )}

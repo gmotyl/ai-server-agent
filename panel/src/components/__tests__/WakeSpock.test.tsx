@@ -132,6 +132,45 @@ describe('WakeSpock', () => {
     expect(screen.getByRole('button', { name: /wake spock/i }).textContent).toMatch(/20s/)
   })
 
+  it('PIN timeout without retryAfterMs leaves the button enabled (no cooldown)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { status: 'timeout', elapsedMs: 120000, message: PIN_WARNING })))
+    render(<WakeSpock />)
+    fill('Wake token', 'tok')
+    fill('PIN', '1234')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /wake spock/i })) })
+    const btn = screen.getByRole('button', { name: /^wake spock$/i }) as HTMLButtonElement
+    expect(btn.disabled).toBe(false)
+    expect(screen.queryByText(/PIN wakes are locked/i)).toBeNull()
+  })
+
+  it('already_awake warns and "Send anyway" re-posts with force', async () => {
+    const fetchMock = vi.fn(async (_u: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body))
+      return jsonResponse(200, body.force ? { status: 'awake', forced: true, elapsedMs: 12000 } : { status: 'already_awake', elapsedMs: 100 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<WakeSpock />)
+    fill('Wake token', 'tok')
+    fill('PIN', '1234')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /wake spock/i })) })
+    expect(screen.getByText(/screen may still be off or locked/i)).toBeTruthy()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /send anyway/i })) })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1].body))).toEqual({ pin: '1234', force: true })
+    expect(screen.getByText(/sequence sent, SPOCK answers/i)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /send anyway/i })).toBeNull()
+  })
+
+  it('forced wake that gets no answer shows not responding', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: RequestInit) =>
+      jsonResponse(200, JSON.parse(String(init.body)).force ? { status: 'not_responding', forced: true } : { status: 'already_awake' })))
+    render(<WakeSpock />)
+    fill('Wake token', 'tok')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /wake spock/i })) })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /send anyway/i })) })
+    expect(screen.getByText(/does not answer/i)).toBeTruthy()
+  })
+
   it('keeps an in-flight wake across remount (tab switch)', async () => {
     let resolve!: (r: Response) => void
     let signal: AbortSignal | undefined
